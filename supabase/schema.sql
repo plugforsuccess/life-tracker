@@ -21,6 +21,7 @@ create table public.tasks (
   blocked_by   uuid[] not null default '{}',
   notes        text default '',
   activity_log jsonb not null default '[]',
+  log_checklist_items boolean not null default false,
   created_at   timestamptz not null default now(),
   updated_at   timestamptz not null default now()
 );
