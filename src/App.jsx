@@ -560,15 +560,19 @@ export default function TaskTracker() {
 
   const filtered = tasks
     .filter(t => {
-      if (!showResolved && !STATUS_MAP[t.status]?.next) return false;
+      const isResolved = !STATUS_MAP[t.status]?.next;
+      if (!showResolved && isResolved) return false;
       const pairMatch = filter === "all" || t.status === filter || STATUS_PAIRS.find(p => p.from === filter && t.status === p.to);
+      if (!pairMatch) return false;
+      // Resolved tasks bypass category/priority/due filters so "SHOW DONE" always reveals them
+      if (isResolved) return true;
       const catMatch  = catFilter === "all" || t.category === catFilter;
       const priMatch  = priorityFilter === "all" || t.priority === priorityFilter;
       let dueMatch = true;
       if (dueFilter === "today")   dueMatch = t.due_date === todayStr;
       if (dueFilter === "week")    dueMatch = t.due_date && t.due_date <= weekStr;
       if (dueFilter === "overdue") dueMatch = t.due_date && t.due_date < todayStr;
-      return pairMatch && catMatch && priMatch && dueMatch;
+      return catMatch && priMatch && dueMatch;
     })
     .sort((a, b) => {
       const resolved_a = !STATUS_MAP[a.status]?.next;
