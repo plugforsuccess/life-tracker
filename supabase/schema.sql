@@ -13,7 +13,8 @@ create table public.tasks (
                  'dirty', 'cleaned',
                  'pending', 'complete',
                  'draft', 'sent',
-                 'idea', 'launched'
+                 'idea', 'launched',
+                 'due', 'paid'
                )),
   priority     text not null default 'medium' check (priority in ('high', 'medium', 'low')),
   due_date     date,

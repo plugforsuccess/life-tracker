@@ -69,6 +69,8 @@ const STATUSES = [
   { key: "sent",     label: "SENT",     next: null,       emoji: "✅", color: "#00c896" },
   { key: "idea",     label: "IDEA",     next: "launched", emoji: "💡", color: "#f472b6" },
   { key: "launched", label: "LAUNCHED", next: null,       emoji: "✅", color: "#00c896" },
+  { key: "due",      label: "DUE",      next: "paid",    emoji: "💰", color: "#22c55e" },
+  { key: "paid",     label: "PAID",     next: null,       emoji: "✅", color: "#00c896" },
 ];
 
 const STATUS_PAIRS = [
@@ -79,6 +81,7 @@ const STATUS_PAIRS = [
   { from: "pending", to: "complete", label: "PENDING → COMPLETE", desc: "Waiting on someone else to act" },
   { from: "draft",   to: "sent",     label: "DRAFT → SENT",       desc: "Letter, email, or filing to send" },
   { from: "idea",    to: "launched", label: "IDEA → LAUNCHED",    desc: "Project or build to get off the ground" },
+  { from: "due",     to: "paid",     label: "DUE → PAID",         desc: "Bill, invoice, rent, or payment that needs to be made or collected" },
 ];
 
 const PRIORITIES = [
@@ -475,6 +478,7 @@ export default function TaskTracker() {
     { key:"pending", label:"PENDING→COMPLETE", color:"#a78bfa" },
     { key:"draft",   label:"DRAFT→SENT",       color:"#38bdf8" },
     { key:"idea",    label:"IDEA→LAUNCHED",    color:"#f472b6" },
+    { key:"due",     label:"DUE→PAID",         color:"#22c55e" },
   ];
 
   const selectedPair = STATUS_PAIRS.find(p => p.from === form.status);
