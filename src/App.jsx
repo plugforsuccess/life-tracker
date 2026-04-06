@@ -241,6 +241,8 @@ export default function TaskTracker() {
   // Form state
   const [form,       setForm]       = useState(BLANK);
   const [newLogNote, setNewLogNote] = useState("");
+  const [formError,  setFormError]  = useState("");
+  const [saving,     setSaving]     = useState(false);
 
   // AI
   const [aiPrompt, setAiPrompt] = useState("");
@@ -278,7 +280,7 @@ export default function TaskTracker() {
 
   // ── Open modals ──
   function openAdd() {
-    setForm(BLANK); setAiPrompt(""); setAiError("");
+    setForm(BLANK); setAiPrompt(""); setAiError(""); setFormError(""); setSaving(false);
     setModalMode("add");
   }
   function openEdit(task, e) {
@@ -304,6 +306,7 @@ export default function TaskTracker() {
   function closeModal() {
     setModalMode(null); setEditTarget(null); setLogTarget(null);
     setForm(BLANK); setAiPrompt(""); setAiError(""); setNewLogNote("");
+    setFormError(""); setSaving(false);
   }
 
   // ── AI auto-fill ──
@@ -328,38 +331,45 @@ export default function TaskTracker() {
 
   // ── Add task ──
   async function handleAdd() {
-    if (!form.title.trim()) return;
-    const payload = {
-      title:       form.title.trim(),
-      category:    form.category,
-      status:      form.status,
-      priority:    form.priority,
-      due_date:    form.due_date || null,
-      notes:       form.notes.trim(),
-      blocked_by:  form.blocked_by,
-      activity_log:[logEntry("Task created")],
-    };
-    const { data, error } = await addTask(payload);
-    if (error) { console.error("Failed to add task:", error); return; }
-    setTasks(prev => [data, ...prev]);
-    closeModal();
+    if (!form.title.trim()) { setFormError("Task name is required."); return; }
+    setFormError(""); setSaving(true);
+    try {
+      const payload = {
+        title:       form.title.trim(),
+        category:    form.category,
+        status:      form.status,
+        priority:    form.priority,
+        due_date:    form.due_date || null,
+        notes:       form.notes.trim(),
+        blocked_by:  form.blocked_by,
+        activity_log:[logEntry("Task created")],
+      };
+      const { data, error } = await addTask(payload);
+      if (error) { setFormError(error.message || "Failed to add task."); setSaving(false); return; }
+      setTasks(prev => [data, ...prev]);
+      closeModal();
+    } catch (err) { setFormError(err.message || "Something went wrong."); setSaving(false); }
   }
 
   // ── Save edit ──
   async function handleSaveEdit() {
-    if (!form.title.trim() || !editTarget) return;
-    const prev = editTarget;
-    const changes = [];
-    if (form.title    !== prev.title)    changes.push(`Title updated`);
-    if (form.status   !== prev.status)   changes.push(`Status: ${prev.status.toUpperCase()} → ${form.status.toUpperCase()}`);
-    if (form.priority !== prev.priority) changes.push(`Priority: ${prev.priority} → ${form.priority}`);
-    if (form.due_date !== (prev.due_date||"")) changes.push(`Due date updated`);
-    const newLog = changes.length ? [...(prev.activity_log||[]), logEntry(changes.join(" · "))] : (prev.activity_log||[]);
-    const patch = { title: form.title.trim(), category: form.category, status: form.status, priority: form.priority, due_date: form.due_date||null, notes: form.notes.trim(), blocked_by: form.blocked_by, activity_log: newLog };
-    const { error } = await updateTask(prev.id, patch);
-    if (error) { console.error("Failed to update task:", error); return; }
-    setTasks(ts => ts.map(t => t.id === prev.id ? { ...t, ...patch } : t));
-    closeModal();
+    if (!form.title.trim()) { setFormError("Task name is required."); return; }
+    if (!editTarget) return;
+    setFormError(""); setSaving(true);
+    try {
+      const prev = editTarget;
+      const changes = [];
+      if (form.title    !== prev.title)    changes.push(`Title updated`);
+      if (form.status   !== prev.status)   changes.push(`Status: ${prev.status.toUpperCase()} → ${form.status.toUpperCase()}`);
+      if (form.priority !== prev.priority) changes.push(`Priority: ${prev.priority} → ${form.priority}`);
+      if (form.due_date !== (prev.due_date||"")) changes.push(`Due date updated`);
+      const newLog = changes.length ? [...(prev.activity_log||[]), logEntry(changes.join(" · "))] : (prev.activity_log||[]);
+      const patch = { title: form.title.trim(), category: form.category, status: form.status, priority: form.priority, due_date: form.due_date||null, notes: form.notes.trim(), blocked_by: form.blocked_by, activity_log: newLog };
+      const { error } = await updateTask(prev.id, patch);
+      if (error) { setFormError(error.message || "Failed to save changes."); setSaving(false); return; }
+      setTasks(ts => ts.map(t => t.id === prev.id ? { ...t, ...patch } : t));
+      closeModal();
+    } catch (err) { setFormError(err.message || "Something went wrong."); setSaving(false); }
   }
 
   // ── Reopen task ──
@@ -396,13 +406,16 @@ export default function TaskTracker() {
 
   // ── Add activity log note ──
   async function handleAddLogNote() {
-    if (!newLogNote.trim() || !logTarget) return;
-    const newLog = [...(logTarget.activity_log||[]), logEntry(newLogNote.trim())];
-    const { error } = await updateTask(logTarget.id, { activity_log: newLog });
-    if (error) { console.error("Failed to add log note:", error); return; }
-    setTasks(ts => ts.map(t => t.id === logTarget.id ? { ...t, activity_log: newLog } : t));
-    setLogTarget(lt => ({ ...lt, activity_log: newLog }));
-    setNewLogNote("");
+    if (!newLogNote.trim() || !logTarget) { setFormError("Note cannot be empty."); return; }
+    setFormError(""); setSaving(true);
+    try {
+      const newLog = [...(logTarget.activity_log||[]), logEntry(newLogNote.trim())];
+      const { error } = await updateTask(logTarget.id, { activity_log: newLog });
+      if (error) { setFormError(error.message || "Failed to add note."); setSaving(false); return; }
+      setTasks(ts => ts.map(t => t.id === logTarget.id ? { ...t, activity_log: newLog } : t));
+      setLogTarget(lt => ({ ...lt, activity_log: newLog }));
+      setNewLogNote(""); setSaving(false);
+    } catch (err) { setFormError(err.message || "Something went wrong."); setSaving(false); }
   }
 
   // ── Stats ──
@@ -613,18 +626,18 @@ export default function TaskTracker() {
                     )}
                     <div style={{ display:"flex", gap:"8px", marginTop:"12px", flexWrap:"wrap" }}>
                       {s.next && !isBlocked && (
-                        <button style={dyn.actionBtn("#00c896")} onClick={() => handleAdvance(task)}>
+                        <button type="button" style={dyn.actionBtn("#00c896")} onClick={() => handleAdvance(task)}>
                           → Mark {STATUS_MAP[s.next]?.label}
                         </button>
                       )}
                       {isResolved && (
-                        <button style={dyn.actionBtn("#ffc107")} onClick={e => handleReopen(task, e)}>
+                        <button type="button" style={dyn.actionBtn("#ffc107")} onClick={e => handleReopen(task, e)}>
                           ↩ Reopen
                         </button>
                       )}
-                      <button style={dyn.actionBtn(G.accent)} onClick={e => openEdit(task, e)}>✏ Edit</button>
-                      <button style={dyn.actionBtn("#38bdf8")} onClick={e => openLog(task, e)}>📋 Log ({logCount})</button>
-                      <button style={dyn.actionBtn("#ff4444", true)} onClick={e => handleDelete(task.id, e)}>Delete</button>
+                      <button type="button" style={dyn.actionBtn(G.accent)} onClick={e => openEdit(task, e)}>✏ Edit</button>
+                      <button type="button" style={dyn.actionBtn("#38bdf8")} onClick={e => openLog(task, e)}>📋 Log ({logCount})</button>
+                      <button type="button" style={dyn.actionBtn("#ff4444", true)} onClick={e => handleDelete(task.id, e)}>Delete</button>
                     </div>
                   </div>
                 )}
@@ -658,7 +671,7 @@ export default function TaskTracker() {
                     onKeyDown={e => { if (e.key==="Enter" && (e.metaKey||e.ctrlKey)) handleAiFill(); }}
                   />
                   <div style={{ display:"flex", alignItems:"center", gap:"10px", marginTop:"6px" }}>
-                    <button
+                    <button type="button"
                       style={{ padding:"6px 14px", borderRadius:"6px", background: aiLoading ? "transparent" : G.accentGlow, border:`1px solid ${aiLoading ? G.border : G.accent}`, color: aiLoading ? G.muted : G.accent, fontFamily: G.font, fontSize:"10px", letterSpacing:"1px", cursor: aiLoading ? "not-allowed" : "pointer" }}
                       onClick={handleAiFill} disabled={aiLoading}>
                       {aiLoading ? "THINKING…" : "✨ FILL FORM"}
@@ -695,7 +708,7 @@ export default function TaskTracker() {
             <label style={base.label}>Priority</label>
             <div style={base.priorityRow}>
               {PRIORITIES.map(p => (
-                <button key={p.key} style={dyn.priorityBtn(form.priority===p.key, p.color)} onClick={() => setF("priority", p.key)}>{p.icon} {p.label}</button>
+                <button type="button" key={p.key} style={dyn.priorityBtn(form.priority===p.key, p.color)} onClick={() => setF("priority", p.key)}>{p.icon} {p.label}</button>
               ))}
             </div>
 
@@ -727,10 +740,11 @@ export default function TaskTracker() {
               </>
             )}
 
+            {formError && <p style={{ fontSize:"11px", color:"#ff4444", margin:"0 0 8px", lineHeight:1.4 }}>{formError}</p>}
             <div style={base.modalBtns}>
-              <button style={dyn.secondaryBtn} onClick={closeModal}>Cancel</button>
-              <button style={dyn.primaryBtn} onClick={modalMode==="add" ? handleAdd : handleSaveEdit}>
-                {modalMode==="add" ? "ADD TASK" : "SAVE CHANGES"}
+              <button type="button" style={dyn.secondaryBtn} onClick={closeModal} disabled={saving}>Cancel</button>
+              <button type="button" style={{ ...dyn.primaryBtn, opacity: saving ? 0.6 : 1, cursor: saving ? "not-allowed" : "pointer" }} onClick={modalMode==="add" ? handleAdd : handleSaveEdit} disabled={saving}>
+                {saving ? "SAVING…" : modalMode==="add" ? "ADD TASK" : "SAVE CHANGES"}
               </button>
             </div>
           </div>
@@ -765,9 +779,12 @@ export default function TaskTracker() {
               value={newLogNote}
               onChange={e => setNewLogNote(e.target.value)}
             />
+            {formError && <p style={{ fontSize:"11px", color:"#ff4444", margin:"0 0 8px", lineHeight:1.4 }}>{formError}</p>}
             <div style={base.modalBtns}>
-              <button style={dyn.secondaryBtn} onClick={closeModal}>Close</button>
-              <button style={dyn.primaryBtn} onClick={handleAddLogNote}>ADD NOTE</button>
+              <button type="button" style={dyn.secondaryBtn} onClick={closeModal} disabled={saving}>Close</button>
+              <button type="button" style={{ ...dyn.primaryBtn, opacity: saving ? 0.6 : 1, cursor: saving ? "not-allowed" : "pointer" }} onClick={handleAddLogNote} disabled={saving}>
+                {saving ? "SAVING…" : "ADD NOTE"}
+              </button>
             </div>
           </div>
         </div>
