@@ -191,40 +191,47 @@ export default function TaskTracker() {
   const [dueFilter,      setDueFilter]      = useState("all");  // all | week | today | overdue
   const [expandedId,     setExpandedId]     = useState(null);
   const [loading,        setLoading]        = useState(true);
+  const [isSmallScreen,  setIsSmallScreen]  = useState(window.innerWidth < 375);
+
+  useEffect(() => {
+    const handler = () => setIsSmallScreen(window.innerWidth < 375);
+    window.addEventListener("resize", handler);
+    return () => window.removeEventListener("resize", handler);
+  }, []);
 
   // ─── DESIGN TOKENS (reactive) ──────────────────────────────────────────────
   const G = THEMES[themeKey];
 
   const base = {
-    root:       { minHeight: "100vh", background: G.bg, color: G.text, fontFamily: G.font, padding: "0 0 80px 0" },
-    header:     { borderBottom: `1px solid ${G.border}`, padding: "24px 20px 16px", position: "sticky", top: 0, background: G.bg, zIndex: 100 },
+    root:       { minHeight: "100vh", background: G.bg, color: G.text, fontFamily: G.font, padding: "0 0 80px 0", overflowX: "hidden" },
+    header:     { borderBottom: `1px solid ${G.border}`, padding: "24px 20px 16px", position: "sticky", top: 0, background: G.bg, zIndex: 100, willChange: "transform", WebkitBackfaceVisibility: "hidden" },
     logo:       { fontFamily: G.fontDisplay, fontSize: "11px", letterSpacing: "4px", color: G.accent, textTransform: "uppercase", margin: 0 },
     headline:   { fontFamily: G.fontDisplay, fontSize: "22px", fontWeight: 900, margin: "4px 0 0", letterSpacing: "-0.5px", color: G.text },
-    filterRow:  { display: "flex", gap: "8px", padding: "10px 20px", overflowX: "auto", borderBottom: `1px solid ${G.border}` },
+    filterRow:  { display: "flex", gap: "8px", padding: "10px 20px", overflowX: "auto", borderBottom: `1px solid ${G.border}`, WebkitOverflowScrolling: "touch", scrollbarWidth: "none", msOverflowStyle: "none" },
     taskList:   { padding: "16px 20px", display: "flex", flexDirection: "column", gap: "10px" },
-    statsRow:   { display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "8px", padding: "12px 20px", borderBottom: `1px solid ${G.border}` },
+    statsRow:   { display: "grid", gridTemplateColumns: isSmallScreen ? "repeat(2, 1fr)" : "repeat(4,1fr)", gap: "8px", padding: "12px 20px", borderBottom: `1px solid ${G.border}` },
     statBox:    { background: G.surface, border: `1px solid ${G.border}`, borderRadius: "8px", padding: "10px 8px", textAlign: "center" },
     modal:      { position: "fixed", inset: 0, background: "rgba(0,0,0,0.88)", zIndex: 300, display: "flex", alignItems: "flex-end", justifyContent: "center", padding: "20px" },
-    modalBox:   { background: G.surface, border: `1px solid ${G.border}`, borderRadius: "16px 16px 12px 12px", padding: "24px 20px", width: "100%", maxWidth: "480px", maxHeight: "90vh", overflowY: "auto" },
+    modalBox:   { background: G.surface, border: `1px solid ${G.border}`, borderRadius: "16px 16px 12px 12px", padding: "24px 20px", paddingBottom: "calc(24px + env(safe-area-inset-bottom))", width: "100%", maxWidth: "480px", maxHeight: "90vh", overflowY: "auto", WebkitOverflowScrolling: "touch" },
     label:      { display: "block", fontSize: "9px", letterSpacing: "2px", color: G.muted, marginBottom: "6px", textTransform: "uppercase" },
-    input:      { width: "100%", background: G.bg, border: `1px solid ${G.border}`, borderRadius: "6px", padding: "10px 12px", color: G.text, fontFamily: G.font, fontSize: "13px", marginBottom: "16px", boxSizing: "border-box", outline: "none" },
-    select:     { width: "100%", background: G.bg, border: `1px solid ${G.border}`, borderRadius: "6px", padding: "10px 12px", color: G.text, fontFamily: G.font, fontSize: "13px", marginBottom: "16px", boxSizing: "border-box", outline: "none", appearance: "none" },
+    input:      { width: "100%", background: G.bg, border: `1px solid ${G.border}`, borderRadius: "6px", padding: "10px 12px", color: G.text, fontFamily: G.font, fontSize: "16px", marginBottom: "16px", boxSizing: "border-box", outline: "none" },
+    select:     { width: "100%", background: G.bg, border: `1px solid ${G.border}`, borderRadius: "6px", padding: "10px 12px", color: G.text, fontFamily: G.font, fontSize: "16px", marginBottom: "16px", boxSizing: "border-box", outline: "none", appearance: "none" },
     pairsGrid:  { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginBottom: "8px" },
     priorityRow:{ display: "flex", gap: "8px", marginBottom: "16px" },
     modalBtns:  { display: "flex", gap: "10px", marginTop: "8px" },
-    addBtn:     { position: "fixed", bottom: "24px", right: "20px", width: "56px", height: "56px", borderRadius: "50%", background: G.accent, border: "none", color: "#fff", fontSize: "28px", cursor: "pointer", boxShadow: `0 4px 24px ${G.accentGlow}`, display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200 },
+    addBtn:     { position: "fixed", bottom: "calc(24px + env(safe-area-inset-bottom))", right: "20px", width: "56px", height: "56px", borderRadius: "50%", background: G.accent, border: "none", color: "#fff", fontSize: "28px", cursor: "pointer", boxShadow: `0 4px 24px ${G.accentGlow}`, display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, transition: "transform 0.1s, opacity 0.1s" },
     emptyState: { textAlign: "center", padding: "60px 20px", color: G.muted },
     aiBox:      { background: G.bg, border: `1px solid ${G.accent}55`, borderRadius: "8px", padding: "12px", marginBottom: "16px" },
   };
 
   const dyn = {
-    filterBtn:   (active, color) => ({ padding: "5px 12px", borderRadius: "4px", border: `1px solid ${active ? color : G.border}`, background: active ? `${color}22` : "transparent", color: active ? color : G.muted, fontSize: "10px", letterSpacing: "1.5px", fontFamily: G.font, cursor: "pointer", whiteSpace: "nowrap", transition: "all 0.15s", fontWeight: active ? 700 : 400 }),
+    filterBtn:   (active, color) => ({ padding: "8px 12px", borderRadius: "4px", border: `1px solid ${active ? color : G.border}`, background: active ? `${color}22` : "transparent", color: active ? color : G.muted, fontSize: "10px", letterSpacing: "1.5px", fontFamily: G.font, cursor: "pointer", whiteSpace: "nowrap", transition: "all 0.15s", fontWeight: active ? 700 : 400 }),
     card:        (color, blocked) => ({ background: G.surface, border: `1px solid ${blocked ? "#ff444433" : G.border}`, borderLeft: `3px solid ${color}`, borderRadius: "8px", padding: "14px 16px", cursor: "default", opacity: blocked ? 0.78 : 1, transition: "opacity 0.2s" }),
     badge:       (color) => ({ fontSize: "9px", letterSpacing: "1.5px", padding: "2px 8px", borderRadius: "3px", border: `1px solid ${color}`, color, whiteSpace: "nowrap" }),
     catTag:      (cat)   => ({ fontSize: "9px", letterSpacing: "1px", color: cat === "Business" ? "#7c6af7" : "#ff8c42", textTransform: "uppercase" }),
-    pairOption:  (sel)   => ({ padding: "10px 8px", borderRadius: "6px", border: `1px solid ${sel ? G.accent : G.border}`, background: sel ? G.accentGlow : "transparent", color: sel ? G.accent : G.muted, fontSize: "10px", cursor: "pointer", textAlign: "center", fontFamily: G.font, transition: "all 0.15s" }),
-    priorityBtn: (sel, color) => ({ flex: 1, padding: "8px 4px", borderRadius: "6px", border: `1px solid ${sel ? color : G.border}`, background: sel ? `${color}22` : "transparent", color: sel ? color : G.muted, fontSize: "10px", letterSpacing: "1px", fontFamily: G.font, cursor: "pointer", transition: "all 0.15s" }),
-    actionBtn:   (color, ghost) => ({ padding: "5px 12px", borderRadius: "4px", border: `1px solid ${ghost ? G.border : color}`, background: ghost ? "transparent" : `${color}22`, color: ghost ? G.muted : color, fontSize: "10px", fontFamily: G.font, cursor: "pointer", transition: "all 0.15s" }),
+    pairOption:  (sel)   => ({ padding: "14px 8px", borderRadius: "6px", border: `1px solid ${sel ? G.accent : G.border}`, background: sel ? G.accentGlow : "transparent", color: sel ? G.accent : G.muted, fontSize: "10px", cursor: "pointer", textAlign: "center", fontFamily: G.font, transition: "all 0.15s" }),
+    priorityBtn: (sel, color) => ({ flex: 1, padding: "12px 4px", borderRadius: "6px", border: `1px solid ${sel ? color : G.border}`, background: sel ? `${color}22` : "transparent", color: sel ? color : G.muted, fontSize: "10px", letterSpacing: "1px", fontFamily: G.font, cursor: "pointer", transition: "all 0.15s" }),
+    actionBtn:   (color, ghost) => ({ padding: "8px 14px", borderRadius: "4px", border: `1px solid ${ghost ? G.border : color}`, background: ghost ? "transparent" : `${color}22`, color: ghost ? G.muted : color, fontSize: "10px", fontFamily: G.font, cursor: "pointer", transition: "all 0.15s" }),
     statNum:     (color) => ({ fontFamily: G.fontDisplay, fontSize: "22px", fontWeight: 900, color, display: "block" }),
     primaryBtn:  { flex: 1, padding: "12px", borderRadius: "8px", background: G.accent, border: "none", color: "#fff", fontFamily: G.fontDisplay, fontSize: "12px", letterSpacing: "2px", fontWeight: 700, cursor: "pointer" },
     secondaryBtn:{ padding: "12px 16px", borderRadius: "8px", background: "transparent", border: `1px solid ${G.border}`, color: G.muted, fontFamily: G.font, fontSize: "12px", cursor: "pointer" },
@@ -484,13 +491,14 @@ export default function TaskTracker() {
   return (
     <>
       <style>{`
-        * { box-sizing: border-box; }
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
         body { margin: 0; background: ${G.bg}; }
         ::-webkit-scrollbar { width: 4px; height: 4px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: ${G.border}; border-radius: 2px; }
         input[type=date] { color-scheme: ${G.mode}; }
-        input[type=date]::-webkit-calendar-picker-indicator { filter: invert(0.4) sepia(1) saturate(3) hue-rotate(220deg); cursor: pointer; }
+        .filter-row::-webkit-scrollbar { display: none; }
+        button:active, [role="button"]:active { opacity: 0.7; transform: scale(0.97); }
       `}</style>
 
       <div style={base.root}>
@@ -533,7 +541,7 @@ export default function TaskTracker() {
         </div>
 
         {/* ── Priority + Category + Due filters ── */}
-        <div style={base.filterRow}>
+        <div className="filter-row" style={base.filterRow}>
           {[
             { key:"all",    label:"ALL PRI", color: G.accent },
             { key:"high",   label:"🔥 HIGH", color:"#ff4444" },
@@ -560,7 +568,7 @@ export default function TaskTracker() {
         </div>
 
         {/* ── Status pair filters with counts ── */}
-        <div style={base.filterRow}>
+        <div className="filter-row" style={base.filterRow}>
           {pairFilters.map(f => {
             const count = pairCount(f.key);
             return (
@@ -597,7 +605,7 @@ export default function TaskTracker() {
             const logCount  = (task.activity_log||[]).length;
 
             return (
-              <div key={task.id} style={dyn.card(s.color, isBlocked)}
+              <div key={task.id} role="button" style={{ ...dyn.card(s.color, isBlocked), WebkitTapHighlightColor: "transparent" }}
                 onClick={() => setExpandedId(expanded ? null : task.id)}>
 
                 {/* Top row */}
@@ -672,11 +680,12 @@ export default function TaskTracker() {
                 <label style={base.label}>✨ AI Auto-Fill — describe it, Claude fills the form</label>
                 <div style={base.aiBox}>
                   <textarea
-                    style={{ width:"100%", background:"transparent", border:"none", color: G.text, fontFamily: G.font, fontSize:"12px", outline:"none", resize:"none", lineHeight:1.6, minHeight:"52px" }}
+                    style={{ width:"100%", background:"transparent", border:"none", color: G.text, fontFamily: G.font, fontSize:"16px", outline:"none", resize:"none", lineHeight:1.6, minHeight:"52px" }}
                     placeholder={`e.g. "Tenant in Unit 3 hasn't paid — send notice by Friday" or "Waiting on attorney before filing BriteBox complaint"`}
                     value={aiPrompt}
                     onChange={e => setAiPrompt(e.target.value)}
                     onKeyDown={e => { if (e.key==="Enter" && (e.metaKey||e.ctrlKey)) handleAiFill(); }}
+                    onFocus={e => setTimeout(() => e.target.scrollIntoView({ behavior: "smooth", block: "center" }), 300)}
                   />
                   <div style={{ display:"flex", alignItems:"center", gap:"10px", marginTop:"6px" }}>
                     <button type="button"
@@ -693,7 +702,7 @@ export default function TaskTracker() {
 
             {/* Title */}
             <label style={base.label}>Task Name</label>
-            <input style={base.input} placeholder="What needs to happen?" value={form.title} onChange={e => setF("title", e.target.value)} autoFocus />
+            <input style={base.input} placeholder="What needs to happen?" value={form.title} onChange={e => setF("title", e.target.value)} onFocus={e => setTimeout(() => e.target.scrollIntoView({ behavior: "smooth", block: "center" }), 300)} autoFocus />
 
             {/* Category */}
             <label style={base.label}>Category</label>
@@ -705,7 +714,7 @@ export default function TaskTracker() {
             <label style={base.label}>Status Type</label>
             <div style={base.pairsGrid}>
               {STATUS_PAIRS.map(p => (
-                <button type="button" key={p.from} style={dyn.pairOption(form.status === p.from)} onClick={() => setF("status", p.from)}>{p.label}</button>
+                <button type="button" role="button" key={p.from} style={{ ...dyn.pairOption(form.status === p.from), WebkitTapHighlightColor: "transparent" }} onClick={() => setF("status", p.from)}>{p.label}</button>
               ))}
             </div>
             {selectedPair && (
@@ -722,11 +731,11 @@ export default function TaskTracker() {
 
             {/* Due date */}
             <label style={base.label}>Due Date (optional)</label>
-            <input type="date" style={base.input} value={form.due_date} onChange={e => setF("due_date", e.target.value)} />
+            <input type="date" style={{ ...base.input, minHeight: "44px", fontSize: "16px", WebkitAppearance: "none" }} value={form.due_date} onChange={e => setF("due_date", e.target.value)} onFocus={e => setTimeout(() => e.target.scrollIntoView({ behavior: "smooth", block: "center" }), 300)} />
 
             {/* Notes */}
             <label style={base.label}>Notes (optional)</label>
-            <textarea style={{ ...base.input, minHeight:"56px", resize:"vertical" }} placeholder="Any context or details…" value={form.notes} onChange={e => setF("notes", e.target.value)} />
+            <textarea style={{ ...base.input, minHeight:"56px", resize:"vertical" }} placeholder="Any context or details…" value={form.notes} onChange={e => setF("notes", e.target.value)} onFocus={e => setTimeout(() => e.target.scrollIntoView({ behavior: "smooth", block: "center" }), 300)} />
 
             {/* Blocked by */}
             {otherActiveTasks.length > 0 && (
@@ -737,7 +746,7 @@ export default function TaskTracker() {
                     const sel = form.blocked_by.includes(t.id);
                     return (
                       <div key={t.id}
-                        style={{ display:"flex", alignItems:"center", gap:"8px", padding:"8px 10px", borderRadius:"6px", cursor:"pointer", border:`1px solid ${sel ? G.accent : G.border}`, background: sel ? G.accentGlow : "transparent", transition:"all 0.15s" }}
+                        style={{ display:"flex", alignItems:"center", gap:"8px", padding:"12px 10px", borderRadius:"6px", cursor:"pointer", border:`1px solid ${sel ? G.accent : G.border}`, background: sel ? G.accentGlow : "transparent", transition:"all 0.15s" }}
                         onClick={() => toggleBlockedBy(t.id)}>
                         <span style={{ fontSize:"11px", color: sel ? G.accent : G.muted, flex:1 }}>{t.title}</span>
                         <span style={{ fontSize:"9px", color: G.muted }}>{STATUS_MAP[t.status]?.label}</span>
@@ -786,6 +795,7 @@ export default function TaskTracker() {
               placeholder={`e.g. "Called attorney — left voicemail" or "Contractor quoted $850"`}
               value={newLogNote}
               onChange={e => setNewLogNote(e.target.value)}
+              onFocus={e => setTimeout(() => e.target.scrollIntoView({ behavior: "smooth", block: "center" }), 300)}
             />
             {formError && <p style={{ fontSize:"11px", color:"#ff4444", margin:"0 0 8px", lineHeight:1.4 }}>{formError}</p>}
             <div style={base.modalBtns}>
