@@ -95,7 +95,7 @@ function now() { return new Date().toISOString(); }
 function logEntry(text) { return { timestamp: now(), text }; }
 
 // ─── DESIGN TOKENS ───────────────────────────────────────────────────────────
-const G = {
+const DARK = {
   bg: "#0a0a0f", surface: "#111118", border: "#1e1e2e",
   text: "#e8e8f0", muted: "#5a5a7a", accent: "#7c6af7",
   accentGlow: "rgba(124,106,247,0.2)",
@@ -103,54 +103,15 @@ const G = {
   fontDisplay: "'Syne','Arial Black',sans-serif",
 };
 
-// ─── STYLE HELPERS ───────────────────────────────────────────────────────────
-const base = {
-  root:       { minHeight: "100vh", background: G.bg, color: G.text, fontFamily: G.font, padding: "0 0 80px 0" },
-  header:     { borderBottom: `1px solid ${G.border}`, padding: "24px 20px 16px", position: "sticky", top: 0, background: G.bg, zIndex: 100 },
-  logo:       { fontFamily: G.fontDisplay, fontSize: "11px", letterSpacing: "4px", color: G.accent, textTransform: "uppercase", margin: 0 },
-  headline:   { fontFamily: G.fontDisplay, fontSize: "22px", fontWeight: 900, margin: "4px 0 0", letterSpacing: "-0.5px", color: G.text },
-  filterRow:  { display: "flex", gap: "8px", padding: "10px 20px", overflowX: "auto", borderBottom: `1px solid ${G.border}` },
-  taskList:   { padding: "16px 20px", display: "flex", flexDirection: "column", gap: "10px" },
-  statsRow:   { display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "8px", padding: "12px 20px", borderBottom: `1px solid ${G.border}` },
-  statBox:    { background: G.surface, border: `1px solid ${G.border}`, borderRadius: "8px", padding: "10px 8px", textAlign: "center" },
-  modal:      { position: "fixed", inset: 0, background: "rgba(0,0,0,0.88)", zIndex: 300, display: "flex", alignItems: "flex-end", justifyContent: "center", padding: "20px" },
-  modalBox:   { background: G.surface, border: `1px solid ${G.border}`, borderRadius: "16px 16px 12px 12px", padding: "24px 20px", width: "100%", maxWidth: "480px", maxHeight: "90vh", overflowY: "auto" },
-  label:      { display: "block", fontSize: "9px", letterSpacing: "2px", color: G.muted, marginBottom: "6px", textTransform: "uppercase" },
-  input:      { width: "100%", background: G.bg, border: `1px solid ${G.border}`, borderRadius: "6px", padding: "10px 12px", color: G.text, fontFamily: G.font, fontSize: "13px", marginBottom: "16px", boxSizing: "border-box", outline: "none" },
-  select:     { width: "100%", background: G.bg, border: `1px solid ${G.border}`, borderRadius: "6px", padding: "10px 12px", color: G.text, fontFamily: G.font, fontSize: "13px", marginBottom: "16px", boxSizing: "border-box", outline: "none", appearance: "none" },
-  pairsGrid:  { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginBottom: "8px" },
-  priorityRow:{ display: "flex", gap: "8px", marginBottom: "16px" },
-  modalBtns:  { display: "flex", gap: "10px", marginTop: "8px" },
-  addBtn:     { position: "fixed", bottom: "24px", right: "20px", width: "56px", height: "56px", borderRadius: "50%", background: G.accent, border: "none", color: "#fff", fontSize: "28px", cursor: "pointer", boxShadow: `0 4px 24px ${G.accentGlow}`, display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200 },
-  emptyState: { textAlign: "center", padding: "60px 20px", color: G.muted },
-  aiBox:      { background: G.bg, border: `1px solid ${G.accent}55`, borderRadius: "8px", padding: "12px", marginBottom: "16px" },
-};
-
-const dyn = {
-  filterBtn:   (active, color) => ({ padding: "5px 12px", borderRadius: "4px", border: `1px solid ${active ? color : G.border}`, background: active ? `${color}22` : "transparent", color: active ? color : G.muted, fontSize: "10px", letterSpacing: "1.5px", fontFamily: G.font, cursor: "pointer", whiteSpace: "nowrap", transition: "all 0.15s", fontWeight: active ? 700 : 400 }),
-  card:        (color, blocked) => ({ background: G.surface, border: `1px solid ${blocked ? "#ff444433" : G.border}`, borderLeft: `3px solid ${color}`, borderRadius: "8px", padding: "14px 16px", cursor: "default", opacity: blocked ? 0.78 : 1, transition: "opacity 0.2s" }),
-  badge:       (color) => ({ fontSize: "9px", letterSpacing: "1.5px", padding: "2px 8px", borderRadius: "3px", border: `1px solid ${color}`, color, whiteSpace: "nowrap" }),
-  catTag:      (cat)   => ({ fontSize: "9px", letterSpacing: "1px", color: cat === "Business" ? "#7c6af7" : "#ff8c42", textTransform: "uppercase" }),
-  pairOption:  (sel)   => ({ padding: "10px 8px", borderRadius: "6px", border: `1px solid ${sel ? G.accent : G.border}`, background: sel ? G.accentGlow : "transparent", color: sel ? G.accent : G.muted, fontSize: "10px", cursor: "pointer", textAlign: "center", fontFamily: G.font, transition: "all 0.15s" }),
-  priorityBtn: (sel, color) => ({ flex: 1, padding: "8px 4px", borderRadius: "6px", border: `1px solid ${sel ? color : G.border}`, background: sel ? `${color}22` : "transparent", color: sel ? color : G.muted, fontSize: "10px", letterSpacing: "1px", fontFamily: G.font, cursor: "pointer", transition: "all 0.15s" }),
-  actionBtn:   (color, ghost) => ({ padding: "5px 12px", borderRadius: "4px", border: `1px solid ${ghost ? G.border : color}`, background: ghost ? "transparent" : `${color}22`, color: ghost ? G.muted : color, fontSize: "10px", fontFamily: G.font, cursor: "pointer", transition: "all 0.15s" }),
-  statNum:     (color) => ({ fontFamily: G.fontDisplay, fontSize: "22px", fontWeight: 900, color, display: "block" }),
-  primaryBtn:  { flex: 1, padding: "12px", borderRadius: "8px", background: G.accent, border: "none", color: "#fff", fontFamily: G.fontDisplay, fontSize: "12px", letterSpacing: "2px", fontWeight: 700, cursor: "pointer" },
-  secondaryBtn:{ padding: "12px 16px", borderRadius: "8px", background: "transparent", border: `1px solid ${G.border}`, color: G.muted, fontFamily: G.font, fontSize: "12px", cursor: "pointer" },
+const LIGHT = {
+  bg: "#f4f4f8", surface: "#ffffff", border: "#e0e0ea",
+  text: "#0a0a0f", muted: "#8888aa", accent: "#7c6af7",
+  accentGlow: "rgba(124,106,247,0.12)",
+  font: "'DM Mono','Courier New',monospace",
+  fontDisplay: "'Syne','Arial Black',sans-serif",
 };
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
-function dueDateLabel(due_date) {
-  if (!due_date) return null;
-  const today = new Date(); today.setHours(0,0,0,0);
-  const due   = new Date(due_date + "T00:00:00");
-  const diff  = Math.round((due - today) / 86400000);
-  if (diff < 0)   return { label: `${Math.abs(diff)}d OVERDUE`, color: "#ff4444" };
-  if (diff === 0) return { label: "DUE TODAY",     color: "#ff4444" };
-  if (diff <= 3)  return { label: `DUE IN ${diff}D`, color: "#ffc107" };
-  return { label: `DUE ${due.toLocaleDateString("en-US", { month:"short", day:"numeric" })}`, color: G.muted };
-}
-
 function fmtTime(iso) {
   return new Date(iso).toLocaleString("en-US", { month:"short", day:"numeric", hour:"numeric", minute:"2-digit" });
 }
@@ -160,6 +121,11 @@ const BLANK = { title:"", category:"Business", status:"broke", priority:"medium"
 
 // ─── APP ─────────────────────────────────────────────────────────────────────
 export default function TaskTracker() {
+  const [darkMode, setDarkMode] = useState(() => {
+    const stored = localStorage.getItem("lcc-theme");
+    if (stored) return stored === "dark";
+    return true;
+  });
   const [tasks,          setTasks]          = useState([]);
   const [filter,         setFilter]         = useState("all");
   const [catFilter,      setCatFilter]      = useState("all");
@@ -168,6 +134,55 @@ export default function TaskTracker() {
   const [dueFilter,      setDueFilter]      = useState("all");  // all | week | today | overdue
   const [expandedId,     setExpandedId]     = useState(null);
   const [loading,        setLoading]        = useState(true);
+
+  // ─── DESIGN TOKENS (reactive) ──────────────────────────────────────────────
+  const G = darkMode ? DARK : LIGHT;
+
+  const base = {
+    root:       { minHeight: "100vh", background: G.bg, color: G.text, fontFamily: G.font, padding: "0 0 80px 0" },
+    header:     { borderBottom: `1px solid ${G.border}`, padding: "24px 20px 16px", position: "sticky", top: 0, background: G.bg, zIndex: 100 },
+    logo:       { fontFamily: G.fontDisplay, fontSize: "11px", letterSpacing: "4px", color: G.accent, textTransform: "uppercase", margin: 0 },
+    headline:   { fontFamily: G.fontDisplay, fontSize: "22px", fontWeight: 900, margin: "4px 0 0", letterSpacing: "-0.5px", color: G.text },
+    filterRow:  { display: "flex", gap: "8px", padding: "10px 20px", overflowX: "auto", borderBottom: `1px solid ${G.border}` },
+    taskList:   { padding: "16px 20px", display: "flex", flexDirection: "column", gap: "10px" },
+    statsRow:   { display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "8px", padding: "12px 20px", borderBottom: `1px solid ${G.border}` },
+    statBox:    { background: G.surface, border: `1px solid ${G.border}`, borderRadius: "8px", padding: "10px 8px", textAlign: "center" },
+    modal:      { position: "fixed", inset: 0, background: "rgba(0,0,0,0.88)", zIndex: 300, display: "flex", alignItems: "flex-end", justifyContent: "center", padding: "20px" },
+    modalBox:   { background: G.surface, border: `1px solid ${G.border}`, borderRadius: "16px 16px 12px 12px", padding: "24px 20px", width: "100%", maxWidth: "480px", maxHeight: "90vh", overflowY: "auto" },
+    label:      { display: "block", fontSize: "9px", letterSpacing: "2px", color: G.muted, marginBottom: "6px", textTransform: "uppercase" },
+    input:      { width: "100%", background: G.bg, border: `1px solid ${G.border}`, borderRadius: "6px", padding: "10px 12px", color: G.text, fontFamily: G.font, fontSize: "13px", marginBottom: "16px", boxSizing: "border-box", outline: "none" },
+    select:     { width: "100%", background: G.bg, border: `1px solid ${G.border}`, borderRadius: "6px", padding: "10px 12px", color: G.text, fontFamily: G.font, fontSize: "13px", marginBottom: "16px", boxSizing: "border-box", outline: "none", appearance: "none" },
+    pairsGrid:  { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginBottom: "8px" },
+    priorityRow:{ display: "flex", gap: "8px", marginBottom: "16px" },
+    modalBtns:  { display: "flex", gap: "10px", marginTop: "8px" },
+    addBtn:     { position: "fixed", bottom: "24px", right: "20px", width: "56px", height: "56px", borderRadius: "50%", background: G.accent, border: "none", color: "#fff", fontSize: "28px", cursor: "pointer", boxShadow: `0 4px 24px ${G.accentGlow}`, display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200 },
+    emptyState: { textAlign: "center", padding: "60px 20px", color: G.muted },
+    aiBox:      { background: G.bg, border: `1px solid ${G.accent}55`, borderRadius: "8px", padding: "12px", marginBottom: "16px" },
+  };
+
+  const dyn = {
+    filterBtn:   (active, color) => ({ padding: "5px 12px", borderRadius: "4px", border: `1px solid ${active ? color : G.border}`, background: active ? `${color}22` : "transparent", color: active ? color : G.muted, fontSize: "10px", letterSpacing: "1.5px", fontFamily: G.font, cursor: "pointer", whiteSpace: "nowrap", transition: "all 0.15s", fontWeight: active ? 700 : 400 }),
+    card:        (color, blocked) => ({ background: G.surface, border: `1px solid ${blocked ? "#ff444433" : G.border}`, borderLeft: `3px solid ${color}`, borderRadius: "8px", padding: "14px 16px", cursor: "default", opacity: blocked ? 0.78 : 1, transition: "opacity 0.2s" }),
+    badge:       (color) => ({ fontSize: "9px", letterSpacing: "1.5px", padding: "2px 8px", borderRadius: "3px", border: `1px solid ${color}`, color, whiteSpace: "nowrap" }),
+    catTag:      (cat)   => ({ fontSize: "9px", letterSpacing: "1px", color: cat === "Business" ? "#7c6af7" : "#ff8c42", textTransform: "uppercase" }),
+    pairOption:  (sel)   => ({ padding: "10px 8px", borderRadius: "6px", border: `1px solid ${sel ? G.accent : G.border}`, background: sel ? G.accentGlow : "transparent", color: sel ? G.accent : G.muted, fontSize: "10px", cursor: "pointer", textAlign: "center", fontFamily: G.font, transition: "all 0.15s" }),
+    priorityBtn: (sel, color) => ({ flex: 1, padding: "8px 4px", borderRadius: "6px", border: `1px solid ${sel ? color : G.border}`, background: sel ? `${color}22` : "transparent", color: sel ? color : G.muted, fontSize: "10px", letterSpacing: "1px", fontFamily: G.font, cursor: "pointer", transition: "all 0.15s" }),
+    actionBtn:   (color, ghost) => ({ padding: "5px 12px", borderRadius: "4px", border: `1px solid ${ghost ? G.border : color}`, background: ghost ? "transparent" : `${color}22`, color: ghost ? G.muted : color, fontSize: "10px", fontFamily: G.font, cursor: "pointer", transition: "all 0.15s" }),
+    statNum:     (color) => ({ fontFamily: G.fontDisplay, fontSize: "22px", fontWeight: 900, color, display: "block" }),
+    primaryBtn:  { flex: 1, padding: "12px", borderRadius: "8px", background: G.accent, border: "none", color: "#fff", fontFamily: G.fontDisplay, fontSize: "12px", letterSpacing: "2px", fontWeight: 700, cursor: "pointer" },
+    secondaryBtn:{ padding: "12px 16px", borderRadius: "8px", background: "transparent", border: `1px solid ${G.border}`, color: G.muted, fontFamily: G.font, fontSize: "12px", cursor: "pointer" },
+  };
+
+  function dueDateLabel(due_date) {
+    if (!due_date) return null;
+    const today = new Date(); today.setHours(0,0,0,0);
+    const due   = new Date(due_date + "T00:00:00");
+    const diff  = Math.round((due - today) / 86400000);
+    if (diff < 0)   return { label: `${Math.abs(diff)}d OVERDUE`, color: "#ff4444" };
+    if (diff === 0) return { label: "DUE TODAY",     color: "#ff4444" };
+    if (diff <= 3)  return { label: `DUE IN ${diff}D`, color: "#ffc107" };
+    return { label: `DUE ${due.toLocaleDateString("en-US", { month:"short", day:"numeric" })}`, color: G.muted };
+  }
 
   // Modal modes: null | "add" | "edit" | "log"
   const [modalMode,  setModalMode]  = useState(null);
@@ -400,11 +415,11 @@ export default function TaskTracker() {
     <>
       <style>{`
         * { box-sizing: border-box; }
-        body { margin: 0; background: #0a0a0f; }
+        body { margin: 0; background: ${G.bg}; }
         ::-webkit-scrollbar { width: 4px; height: 4px; }
         ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: #1e1e2e; border-radius: 2px; }
-        input[type=date] { color-scheme: dark; }
+        ::-webkit-scrollbar-thumb { background: ${G.border}; border-radius: 2px; }
+        input[type=date] { color-scheme: ${darkMode ? "dark" : "light"}; }
         input[type=date]::-webkit-calendar-picker-indicator { filter: invert(0.4) sepia(1) saturate(3) hue-rotate(220deg); cursor: pointer; }
       `}</style>
 
@@ -414,6 +429,26 @@ export default function TaskTracker() {
         <div style={base.header}>
           <p style={base.logo}>LIFE COMMAND CENTER</p>
           <h1 style={base.headline}>STATUS TRACKER</h1>
+          <button
+            onClick={() => {
+              const next = !darkMode;
+              setDarkMode(next);
+              localStorage.setItem("lcc-theme", next ? "dark" : "light");
+            }}
+            style={{
+              position: "absolute",
+              top: "20px",
+              right: "20px",
+              background: "transparent",
+              border: `1px solid ${G.border}`,
+              borderRadius: "6px",
+              padding: "6px 10px",
+              fontSize: "16px",
+              cursor: "pointer",
+              color: G.text,
+            }}>
+            {darkMode ? "☀️" : "🌙"}
+          </button>
         </div>
 
         {/* ── Stats ── */}
