@@ -93,6 +93,7 @@ const PRIORITIES = [
 const CATEGORIES = ["Business", "Personal"];
 const STATUS_MAP   = Object.fromEntries(STATUSES.map(s => [s.key, s]));
 const PRIORITY_MAP = Object.fromEntries(PRIORITIES.map(p => [p.key, p]));
+const PRIORITY_ORDER = { high: 0, medium: 1, low: 2 };
 
 const LOG_NOTE_MAX = 280;
 
@@ -569,18 +570,46 @@ export default function TaskTracker() {
       if (dueFilter === "week")    dueMatch = t.due_date && t.due_date <= weekStr;
       if (dueFilter === "overdue") dueMatch = t.due_date && t.due_date < todayStr;
       return pairMatch && catMatch && priMatch && dueMatch;
-    })
-    .sort((a, b) => {
-      const resolved_a = !STATUS_MAP[a.status]?.next;
-      const resolved_b = !STATUS_MAP[b.status]?.next;
-      if (resolved_a !== resolved_b) return resolved_a ? 1 : -1;
-      const po = { high:0, medium:1, low:2 };
-      if (po[a.priority] !== po[b.priority]) return po[a.priority] - po[b.priority];
-      if (a.due_date && b.due_date) return new Date(a.due_date) - new Date(b.due_date);
-      if (a.due_date) return -1;
-      if (b.due_date) return 1;
-      return 0;
     });
+
+  // Pre-compute sort keys to avoid repeated work inside comparator
+  const sortKeys = new Map();
+  for (const t of filtered) {
+    const resolved = !STATUS_MAP[t.status]?.next;
+    const pri = PRIORITY_ORDER[t.priority] ?? PRIORITY_ORDER.medium;
+    const dueMs = t.due_date ? new Date(t.due_date + "T00:00:00").getTime() : null;
+    const overdue = dueMs !== null && dueMs < new Date(todayStr + "T00:00:00").getTime();
+    const blocked = (t.blocked_by || []).some(bid => {
+      const bt = tasks.find(x => x.id === bid);
+      return bt && STATUS_MAP[bt.status]?.next;
+    });
+    sortKeys.set(t.id, { resolved, pri, dueMs, overdue, blocked });
+  }
+
+  filtered.sort((a, b) => {
+    const ka = sortKeys.get(a.id);
+    const kb = sortKeys.get(b.id);
+
+    // 1. Resolved tasks sink to the bottom
+    if (ka.resolved !== kb.resolved) return ka.resolved ? 1 : -1;
+
+    // 2. Priority (high → medium → low)
+    if (ka.pri !== kb.pri) return ka.pri - kb.pri;
+
+    // 3. Blocked tasks sink below unblocked tasks of the same priority
+    if (ka.blocked !== kb.blocked) return ka.blocked ? 1 : -1;
+
+    // 4. Overdue tasks rise above non-overdue tasks of the same priority
+    if (ka.overdue !== kb.overdue) return ka.overdue ? -1 : 1;
+
+    // 5. Earlier due dates first; tasks with a due date before those without
+    if (ka.dueMs !== null && kb.dueMs !== null) return ka.dueMs - kb.dueMs;
+    if (ka.dueMs !== null) return -1;
+    if (kb.dueMs !== null) return 1;
+
+    // 6. Stable tiebreaker by id (oldest first)
+    return a.id - b.id;
+  });
 
   // ── Counts per pair filter (active tasks only) ──
   function pairCount(key) {
