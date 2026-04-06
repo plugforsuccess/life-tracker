@@ -66,20 +66,23 @@ Pick exactly one "from" key:
               government responses, vendor callbacks, insurance escalations, court filings awaiting reply,
               or ANY task where a real person or organization needs to respond to you.
               Do NOT use "idea" for outreach tasks — if there is a human on the other end, use "pending".
-- "draft"   → a letter, email, demand letter, complaint, or legal filing that still needs to be WRITTEN or SENT.
-              Use "draft" when the communication has NOT gone out yet.
+- "draft"   → a letter, email, demand letter, complaint, application, notice, or legal filing that still needs to be WRITTEN or SENT.
+              Use "draft" ONLY for communications that must be composed and delivered — the key action is sending a message, NOT spending money.
               Use "pending" when it HAS gone out and you are waiting for a reply.
+              NEVER use "draft" for purchases, orders, payments, or supply runs — those are "due".
 - "idea"    → a product, business, SaaS tool, creative concept, or project that has not been built or launched.
               Only use this for building and launching things — NOT for contacting people or legal matters.
-- "due"     → a bill, invoice, rent payment, contractor payment, subscription, tax, or any amount of money
-              that needs to be paid or collected. Use this when money is owed in either direction —
+- "due"     → ANY task where money changes hands: bills, invoices, rent, purchases, orders, subscriptions,
+              supply runs, shopping, payments, taxes, or fees. Use this when money is owed in either direction —
               money you owe OR money owed to you (rent from tenants, client invoices, reimbursements).
-              Keywords: rent, invoice, bill, payment, fee, owe, collect, charge, reimburse, due.
+              Also use for buying/ordering anything: "Amazon order", "buy supplies", "order parts", "renew subscription".
+              Keywords: rent, invoice, bill, payment, fee, owe, collect, charge, reimburse, due, buy, order, purchase, shop, supplies, subscribe, renew.
 
 DRAFT vs PENDING: if the letter/email/filing has not been written → "draft". If sent and waiting on reply → "pending". If unclear → "pending".
 IDEA vs PENDING: if there is a real human or organization to respond → "pending". If it is a concept to build → "idea".
 DUE vs OPEN: if money is explicitly involved (rent, invoice, bill, payment) → "due". If it is a general unresolved issue with no payment component → "open".
 DUE vs PENDING: if you are waiting on a payment to arrive or be made → "due". If you are waiting on a non-financial response or action → "pending".
+DUE vs DRAFT: if the task involves buying, ordering, paying, or any exchange of money → "due". If it involves writing, sending, or filing a communication → "draft". Heuristic: spending money = "due", sending a message = "draft".
 
 ─── PRIORITY RULES ─────────────────────────────────────────
 - "high"   → anything involving attorneys, courts, credit bureaus, money owed, legal deadlines,
