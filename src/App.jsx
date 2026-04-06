@@ -325,7 +325,7 @@ export default function TaskTracker() {
         notes:    parsed.notes    || f.notes,
       }));
       setAiPrompt("");
-    } catch { setAiError("Couldn't parse — try being more specific."); }
+    } catch (err) { setAiError(err.message || "Couldn't parse — try being more specific."); }
     setAiLoading(false);
   }
 
@@ -697,7 +697,7 @@ export default function TaskTracker() {
             <label style={base.label}>Status Type</label>
             <div style={base.pairsGrid}>
               {STATUS_PAIRS.map(p => (
-                <div key={p.from} style={dyn.pairOption(form.status === p.from)} onClick={() => setF("status", p.from)}>{p.label}</div>
+                <button type="button" key={p.from} style={dyn.pairOption(form.status === p.from)} onClick={() => setF("status", p.from)}>{p.label}</button>
               ))}
             </div>
             {selectedPair && (
