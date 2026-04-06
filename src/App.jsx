@@ -191,8 +191,19 @@ function latestUserNote(activity_log) {
   return userNotes[0] || null;
 }
 
+// ─── CHECKLIST HELPERS ──────────────────────────────────────────────────────
+function checklistProgress(checklist) {
+  if (!checklist?.length) return null;
+  const done = checklist.filter(i => i.done).length;
+  return { done, total: checklist.length, complete: done === checklist.length };
+}
+
+function newChecklistItemId() {
+  return `c_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+}
+
 // ─── BLANK FORM STATE ─────────────────────────────────────────────────────────
-const BLANK = { title:"", category:"Business", status:"broke", priority:"medium", due_date:"", notes:"", blocked_by:[] };
+const BLANK = { title:"", category:"Business", status:"broke", priority:"medium", due_date:"", notes:"", blocked_by:[], checklist:[] };
 
 // ─── APP ─────────────────────────────────────────────────────────────────────
 export default function TaskTracker() {
@@ -276,6 +287,10 @@ export default function TaskTracker() {
   const [aiLoading,setAiLoading] = useState(false);
   const [aiError,  setAiError]   = useState("");
 
+  // Checklist form state
+  const [newChecklist,    setNewChecklist]    = useState([]);
+  const [newChecklistItem, setNewChecklistItem] = useState("");
+
   useEffect(() => {
     loadTasks();
 
@@ -308,6 +323,7 @@ export default function TaskTracker() {
   // ── Open modals ──
   function openAdd() {
     setForm(BLANK); setAiPrompt(""); setAiError(""); setFormError(""); setSaving(false);
+    setNewChecklist([]); setNewChecklistItem("");
     setModalMode("add");
   }
   function openEdit(task, e) {
@@ -322,6 +338,7 @@ export default function TaskTracker() {
       notes:      task.notes || "",
       blocked_by: task.blocked_by || [],
     });
+    setNewChecklist(task.checklist || []);
     setModalMode("edit");
   }
   function openLog(task, e) {
@@ -335,6 +352,7 @@ export default function TaskTracker() {
     setForm(BLANK); setAiPrompt(""); setAiError(""); setNewLogNote("");
     setFormError(""); setSaving(false);
     setLogNoteError(""); setCopyConfirm(false); setLogSearch("");
+    setNewChecklist([]); setNewChecklistItem("");
   }
 
   // ── AI auto-fill ──
@@ -370,6 +388,7 @@ export default function TaskTracker() {
         due_date:    form.due_date || null,
         notes:       form.notes.trim(),
         blocked_by:  form.blocked_by,
+        checklist:   newChecklist,
         activity_log:[logEntry("Task created")],
       };
       const { data, error } = await addTask(payload);
@@ -392,8 +411,11 @@ export default function TaskTracker() {
       if (form.priority !== prev.priority) changes.push(`Priority: ${prev.priority} → ${form.priority}`);
       if (form.due_date !== (prev.due_date||"")) changes.push(`Due date updated`);
       if (form.notes.trim() !== (prev.notes||"").trim()) changes.push("Task notes updated");
+      if (JSON.stringify(newChecklist) !== JSON.stringify(prev.checklist || [])) {
+        changes.push(`Checklist updated (${newChecklist.length} items)`);
+      }
       const newLog = changes.length ? [...(prev.activity_log||[]), logEntry(changes.join(" · "))] : (prev.activity_log||[]);
-      const patch = { title: form.title.trim(), category: form.category, status: form.status, priority: form.priority, due_date: form.due_date||null, notes: form.notes.trim(), blocked_by: form.blocked_by, activity_log: newLog };
+      const patch = { title: form.title.trim(), category: form.category, status: form.status, priority: form.priority, due_date: form.due_date||null, notes: form.notes.trim(), blocked_by: form.blocked_by, checklist: newChecklist, activity_log: newLog };
       const { error } = await updateTask(prev.id, patch);
       if (error) { setFormError(error.message || "Failed to save changes."); setSaving(false); return; }
       setTasks(ts => ts.map(t => t.id === prev.id ? { ...t, ...patch } : t));
@@ -474,6 +496,25 @@ export default function TaskTracker() {
     setTasks(ts => ts.map(t => t.id === taskId ? { ...t, activity_log: newLog } : t));
     setLogTarget(lt => ({ ...lt, activity_log: newLog }));
   }
+
+  // ── Checklist data functions ──
+  const toggleChecklistItem = async (taskId, itemId) => {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task || !STATUS_MAP[task.status]?.next) return;
+    const updated = (task.checklist || []).map(item =>
+      item.id === itemId ? { ...item, done: !item.done } : item
+    );
+    await updateTask(taskId, { checklist: updated });
+    setTasks(ts => ts.map(t => t.id === taskId ? { ...t, checklist: updated } : t));
+  };
+
+  const deleteChecklistItem = async (taskId, itemId) => {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task || !STATUS_MAP[task.status]?.next) return;
+    const updated = (task.checklist || []).filter(item => item.id !== itemId);
+    await updateTask(taskId, { checklist: updated });
+    setTasks(ts => ts.map(t => t.id === taskId ? { ...t, checklist: updated } : t));
+  };
 
   // ── Stats ──
   const activeTasks   = tasks.filter(t => STATUS_MAP[t.status]?.next);
@@ -568,19 +609,33 @@ export default function TaskTracker() {
         </div>
 
         {/* ── Stats ── */}
-        <div style={base.statsRow}>
-          {[
-            { label:"ACTIVE",   val: activeTasks.length, color:"#ffc107" },
-            { label:"DONE",     val: resolvedTasks.length, color:"#00c896" },
-            { label:"🔥 HIGH",  val: highCount,          color:"#ff4444" },
-            { label:"OVERDUE",  val: overdueCount,       color: overdueCount > 0 ? "#ff4444" : G.muted },
-          ].map(st => (
-            <div key={st.label} style={base.statBox}>
-              <span style={dyn.statNum(st.color)}>{st.val}</span>
-              <span style={{ fontSize:"8px", letterSpacing:"1px", color: G.muted, display:"block", marginTop:"2px" }}>{st.label}</span>
+        {(() => {
+          const tasksWithChecklists = tasks.filter(t => (t.checklist || []).length > 0);
+          const totalItems = tasksWithChecklists.reduce((sum, t) => sum + t.checklist.length, 0);
+          const doneItems = tasksWithChecklists.reduce((sum, t) => sum + t.checklist.filter(i => i.done).length, 0);
+          const showChecklist = totalItems > 0;
+          return (
+            <div style={{ ...base.statsRow, gridTemplateColumns: showChecklist ? "repeat(5,1fr)" : "repeat(4,1fr)" }}>
+              {[
+                { label:"ACTIVE",   val: activeTasks.length, color:"#ffc107" },
+                { label:"DONE",     val: resolvedTasks.length, color:"#00c896" },
+                { label:"🔥 HIGH",  val: highCount,          color:"#ff4444" },
+                { label:"OVERDUE",  val: overdueCount,       color: overdueCount > 0 ? "#ff4444" : G.muted },
+              ].map(st => (
+                <div key={st.label} style={base.statBox}>
+                  <span style={dyn.statNum(st.color)}>{st.val}</span>
+                  <span style={{ fontSize:"8px", letterSpacing:"1px", color: G.muted, display:"block", marginTop:"2px" }}>{st.label}</span>
+                </div>
+              ))}
+              {showChecklist && (
+                <div style={base.statBox}>
+                  <span style={dyn.statNum(G.accent)}>{doneItems}/{totalItems}</span>
+                  <span style={{ fontSize: "8px", letterSpacing: "1px", color: G.muted, display: "block", marginTop: "2px" }}>ITEMS</span>
+                </div>
+              )}
             </div>
-          ))}
-        </div>
+          );
+        })()}
 
         {/* ── Priority + Category + Due filters ── */}
         <div style={base.filterRow}>
@@ -669,6 +724,19 @@ export default function TaskTracker() {
                   {isResolved && <span style={{ fontSize:"9px", color:"#00c896" }}>✓ DONE</span>}
                   {isBlocked && <span style={{ fontSize:"9px", color:"#ff4444" }}>BLOCKED BY {blockers.length}</span>}
                   {logCount > 0 && <span style={{ fontSize:"9px", color: G.muted }}>📋 {logCount} note{logCount!==1?"s":""}</span>}
+                  {(() => {
+                    const progress = checklistProgress(task.checklist);
+                    return progress ? (
+                      <span style={{
+                        fontSize: "9px",
+                        color: progress.complete ? "#00c896" : G.muted,
+                        letterSpacing: "1px",
+                        fontWeight: progress.complete ? 700 : 400,
+                      }}>
+                        {progress.complete ? "✓" : "☐"} {progress.done}/{progress.total}
+                      </span>
+                    ) : null;
+                  })()}
                 </div>
 
                 {task.notes && <p style={{ fontSize:"11px", color: G.muted, marginTop:"6px", lineHeight:1.5 }}>{task.notes}</p>}
@@ -698,11 +766,95 @@ export default function TaskTracker() {
                         {blockers.map(bt => <p key={bt.id} style={{ fontSize:"11px", color: G.muted, margin:"2px 0" }}>→ {bt.title}</p>)}
                       </div>
                     )}
+
+                    {/* Checklist */}
+                    {(task.checklist || []).length > 0 && (
+                      <div style={{ marginTop: "12px" }} onClick={e => e.stopPropagation()}>
+                        {(() => {
+                          const progress = checklistProgress(task.checklist);
+                          return (
+                            <div style={{ marginBottom: "8px" }}>
+                              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
+                                <span style={{ fontSize: "9px", color: G.muted, letterSpacing: "1px" }}>CHECKLIST</span>
+                                <span style={{ fontSize: "9px", color: progress.complete ? "#00c896" : G.muted }}>
+                                  {progress.done} / {progress.total}
+                                </span>
+                              </div>
+                              <div style={{ height: "2px", background: G.border, borderRadius: "1px", overflow: "hidden" }}>
+                                <div style={{
+                                  height: "100%",
+                                  width: `${(progress.done / progress.total) * 100}%`,
+                                  background: progress.complete ? "#00c896" : G.accent,
+                                  transition: "width 0.3s ease",
+                                  borderRadius: "1px",
+                                }} />
+                              </div>
+                            </div>
+                          );
+                        })()}
+                        <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                          {task.checklist.map(item => (
+                            <div key={item.id}
+                              style={{
+                                display: "flex", alignItems: "center", gap: "10px",
+                                padding: "8px 10px", borderRadius: "6px",
+                                background: item.done ? `${G.accent}0a` : "transparent",
+                                border: `1px solid ${item.done ? G.accent + "33" : G.border}`,
+                                cursor: isResolved ? "default" : "pointer",
+                                transition: "all 0.15s",
+                              }}
+                              onClick={() => !isResolved && toggleChecklistItem(task.id, item.id)}>
+                              <div style={{
+                                width: "16px", height: "16px", borderRadius: "4px", flexShrink: 0,
+                                border: `1.5px solid ${item.done ? G.accent : G.muted}`,
+                                background: item.done ? G.accent : "transparent",
+                                display: "flex", alignItems: "center", justifyContent: "center",
+                                transition: "all 0.15s",
+                              }}>
+                                {item.done && <span style={{ color: "#fff", fontSize: "10px", lineHeight: 1 }}>✓</span>}
+                              </div>
+                              <span style={{
+                                fontSize: "12px",
+                                color: item.done ? G.muted : G.text,
+                                flex: 1,
+                                textDecoration: item.done ? "line-through" : "none",
+                                transition: "all 0.15s",
+                              }}>
+                                {item.text}
+                              </span>
+                              {!isResolved && (
+                                <button
+                                  style={{ background: "transparent", border: "none", color: G.muted, fontSize: "12px", cursor: "pointer", padding: "0 2px", flexShrink: 0 }}
+                                  onClick={e => { e.stopPropagation(); deleteChecklistItem(task.id, item.id); }}>
+                                  ✕
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     <div style={{ display:"flex", gap:"8px", marginTop:"12px", flexWrap:"wrap" }}>
                       {s.next && !isBlocked && (
-                        <button type="button" style={dyn.actionBtn("#00c896")} onClick={() => handleAdvance(task)}>
-                          → Mark {STATUS_MAP[s.next]?.label}
-                        </button>
+                        <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                          {(() => {
+                            const progress = checklistProgress(task.checklist);
+                            const hasUnfinished = progress && !progress.complete;
+                            return (
+                              <>
+                                {hasUnfinished && (
+                                  <p style={{ fontSize: "9px", color: "#ffc107", letterSpacing: "0.5px", margin: 0 }}>
+                                    ⚠ {progress.total - progress.done} checklist item{progress.total - progress.done !== 1 ? "s" : ""} remaining
+                                  </p>
+                                )}
+                                <button type="button" style={dyn.actionBtn("#00c896")} onClick={() => handleAdvance(task)}>
+                                  → Mark {STATUS_MAP[s.next]?.label}
+                                </button>
+                              </>
+                            );
+                          })()}
+                        </div>
                       )}
                       {isResolved && (
                         <button type="button" style={dyn.actionBtn("#ffc107")} onClick={e => handleReopen(task, e)}>
@@ -793,6 +945,73 @@ export default function TaskTracker() {
             {/* Notes */}
             <label style={base.label}>Notes (optional)</label>
             <textarea style={{ ...base.input, minHeight:"56px", resize:"vertical" }} placeholder="Any context or details…" value={form.notes} onChange={e => setF("notes", e.target.value)} />
+
+            {/* Checklist */}
+            <label style={base.label}>Checklist (optional)</label>
+
+            {newChecklist.length > 0 && (
+              <div style={{ display: "flex", flexDirection: "column", gap: "4px", marginBottom: "8px" }}>
+                {newChecklist.map((item, idx) => (
+                  <div key={item.id} style={{
+                    display: "flex", alignItems: "center", gap: "8px",
+                    padding: "8px 10px", borderRadius: "6px",
+                    background: G.bg, border: `1px solid ${G.border}`,
+                  }}>
+                    <span style={{ fontSize: "11px", color: G.text, flex: 1 }}>{item.text}</span>
+                    <button
+                      style={{ background: "transparent", border: "none", color: G.muted, fontSize: "11px", cursor: "pointer", padding: "0 2px" }}
+                      onClick={() => setNewChecklist(prev => prev.filter(i => i.id !== item.id))}>
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div style={{ display: "flex", gap: "8px", marginBottom: "16px" }}>
+              <input
+                style={{ ...base.input, marginBottom: 0, flex: 1, fontSize: "13px" }}
+                placeholder="Add item (e.g. Shower curtain liner)"
+                value={newChecklistItem}
+                maxLength={100}
+                onChange={e => setNewChecklistItem(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    if (!newChecklistItem.trim()) return;
+                    setNewChecklist(prev => [...prev, {
+                      id: newChecklistItemId(),
+                      text: newChecklistItem.trim(),
+                      done: false,
+                    }]);
+                    setNewChecklistItem("");
+                  }
+                }}
+              />
+              <button
+                style={{
+                  padding: "10px 14px", borderRadius: "6px",
+                  background: G.accentGlow, border: `1px solid ${G.accent}`,
+                  color: G.accent, fontFamily: G.font, fontSize: "12px",
+                  cursor: "pointer", flexShrink: 0, whiteSpace: "nowrap",
+                }}
+                onClick={() => {
+                  if (!newChecklistItem.trim()) return;
+                  setNewChecklist(prev => [...prev, {
+                    id: newChecklistItemId(),
+                    text: newChecklistItem.trim(),
+                    done: false,
+                  }]);
+                  setNewChecklistItem("");
+                }}>
+                + ADD
+              </button>
+            </div>
+            {newChecklist.length === 0 && (
+              <p style={{ fontSize: "9px", color: G.muted, margin: "-10px 0 16px", letterSpacing: "0.5px" }}>
+                Press Enter or tap + ADD after each item
+              </p>
+            )}
 
             {/* Blocked by */}
             {otherActiveTasks.length > 0 && (
