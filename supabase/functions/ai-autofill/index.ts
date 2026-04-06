@@ -66,8 +66,12 @@ Pick exactly one "from" key:
               government responses, vendor callbacks, insurance escalations, court filings awaiting reply,
               or ANY task where a real person or organization needs to respond to you.
               Do NOT use "idea" for outreach tasks — if there is a human on the other end, use "pending".
-- "draft"   → a letter, email, demand letter, complaint, application, notice, or legal filing that still needs to be WRITTEN or SENT.
-              Use "draft" ONLY for communications that must be composed and delivered — the key action is sending a message, NOT spending money.
+- "draft"   → a letter, email, demand letter, complaint, application, notice, legal filing, report, or document
+              that still needs to be WRITTEN, UPLOADED, or SUBMITTED.
+              Use "draft" for communications AND document submissions — the key action is preparing and delivering
+              content (writing, uploading to a portal, filing with an agency), NOT spending money.
+              Examples: "upload reports to portal", "submit audit to compliance", "file complaint with CFPB",
+              "send demand letter", "prepare and submit tax documents".
               Use "pending" when it HAS gone out and you are waiting for a reply.
               NEVER use "draft" for purchases, orders, payments, or supply runs — those are "due".
 - "idea"    → a product, business, SaaS tool, creative concept, or project that has not been built or launched.
