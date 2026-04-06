@@ -57,17 +57,37 @@ Today's date is ${today}.
 ─── STATUS RULES ───────────────────────────────────────────
 Pick exactly one "from" key:
 
-- "broke"   → something physically broken that needs repair (appliance, plumbing, roof, vehicle, device)
-- "open"    → an active issue or dispute that needs resolution but hasn't been initiated yet
-- "lost"    → a missing document, item, file, or piece of information
-- "dirty"   → a cleanup, organization, or tidying task
+- "broke"   → something physically broken that needs repair (appliance, plumbing, roof, vehicle, device).
+              The item must be malfunctioning or damaged. Routine maintenance (oil change, filter replacement,
+              tune-up) is NOT "broke" — use "due" if it costs money, or "open" if it is just scheduling.
+              Replacements/upgrades ("replace water heater") are "due" if the focus is purchasing, "broke" only
+              if the current item is non-functional.
+- "open"    → an active issue or dispute that needs resolution but hasn't been initiated yet.
+              Also use for: research tasks ("research options for…"), scheduling tasks ("schedule appointment")
+              where you have NOT yet reached out, disputes ("dispute a charge") where money is contested but
+              the action is resolving the dispute rather than making a payment, and general to-dos that don't
+              fit other statuses. "Dispute a charge" is "open" — you are contesting, not paying.
+- "lost"    → a missing document, item, file, or piece of information that you once had and need to locate.
+              Do NOT use for searching/sourcing something new — "find a contractor" is "open" (sourcing),
+              not "lost" (recovering). The distinction: "lost" = you had it, now it is missing. "open" = you
+              need to find or research something you never had.
+- "dirty"   → a cleanup, organization, or tidying task — both physical AND digital.
+              Includes: cleaning a room, organizing a closet, tidying a garage, BUT ALSO organizing digital
+              files/folders, cleaning up a spreadsheet, decluttering an inbox, sorting photos.
+              If the task says organize, clean, tidy, sort, or declutter → "dirty".
 - "pending" → you have already initiated contact or action and are WAITING on someone else to respond or act.
               Use this for: attorney outreach, contractor follow-ups, agency complaints (CFPB, BBB),
               government responses, vendor callbacks, insurance escalations, court filings awaiting reply,
+              waiting on a delivery/shipment, waiting on a refund to process, waiting on an appointment,
               or ANY task where a real person or organization needs to respond to you.
+              Key: if the payment/order is DONE and now you are waiting for fulfillment → "pending", not "due".
               Do NOT use "idea" for outreach tasks — if there is a human on the other end, use "pending".
-- "draft"   → a letter, email, demand letter, complaint, application, notice, or legal filing that still needs to be WRITTEN or SENT.
-              Use "draft" ONLY for communications that must be composed and delivered — the key action is sending a message, NOT spending money.
+- "draft"   → a letter, email, demand letter, complaint, application, notice, legal filing, report, or document
+              that still needs to be WRITTEN, UPLOADED, or SUBMITTED.
+              Use "draft" for communications AND document submissions — the key action is preparing and delivering
+              content (writing, uploading to a portal, filing with an agency), NOT spending money.
+              Examples: "upload reports to portal", "submit audit to compliance", "file complaint with CFPB",
+              "send demand letter", "prepare and submit tax documents".
               Use "pending" when it HAS gone out and you are waiting for a reply.
               NEVER use "draft" for purchases, orders, payments, or supply runs — those are "due".
 - "idea"    → a product, business, SaaS tool, creative concept, or project that has not been built or launched.
@@ -76,13 +96,23 @@ Pick exactly one "from" key:
               supply runs, shopping, payments, taxes, or fees. Use this when money is owed in either direction —
               money you owe OR money owed to you (rent from tenants, client invoices, reimbursements).
               Also use for buying/ordering anything: "Amazon order", "buy supplies", "order parts", "renew subscription".
-              Keywords: rent, invoice, bill, payment, fee, owe, collect, charge, reimburse, due, buy, order, purchase, shop, supplies, subscribe, renew.
+              Also use for routine maintenance that costs money: "oil change", "HVAC service", "pest control".
+              Do NOT use for: getting a quote/estimate (no money yet → "open"), cancelling a subscription
+              (stopping money, not spending it → "open"), returning an item for refund (action is shipping/
+              returning → "open", unless emphasizing the refund amount owed back to you).
+              Keywords: rent, invoice, bill, payment, fee, owe, collect, charge, reimburse, due, buy, order,
+              purchase, shop, supplies, subscribe, renew, maintenance, service, repair cost.
 
 DRAFT vs PENDING: if the letter/email/filing has not been written → "draft". If sent and waiting on reply → "pending". If unclear → "pending".
+DRAFT vs DUE: if the task involves buying, ordering, paying, or any exchange of money → "due". If it involves writing, sending, or filing a communication → "draft". Heuristic: spending money = "due", sending a message = "draft". For tasks with BOTH (e.g., "file taxes" = prepare docs + pay money, "renew license" = submit application + pay fee), choose based on the PRIMARY action: if the user emphasizes the paperwork/filing → "draft". If they emphasize the cost/payment → "due". If ambiguous, default to "draft" for filings and "due" for renewals/registrations.
 IDEA vs PENDING: if there is a real human or organization to respond → "pending". If it is a concept to build → "idea".
-DUE vs OPEN: if money is explicitly involved (rent, invoice, bill, payment) → "due". If it is a general unresolved issue with no payment component → "open".
-DUE vs PENDING: if you are waiting on a payment to arrive or be made → "due". If you are waiting on a non-financial response or action → "pending".
-DUE vs DRAFT: if the task involves buying, ordering, paying, or any exchange of money → "due". If it involves writing, sending, or filing a communication → "draft". Heuristic: spending money = "due", sending a message = "draft".
+IDEA vs OPEN: if it is a creative/business concept to build or launch → "idea". If it is early-stage research ("look into starting a…") with no concrete plan → "open".
+DUE vs OPEN: if money is explicitly owed or needs to be spent → "due". If it is a dispute about money ("dispute a charge") → "open" (the action is contesting, not paying). If getting a quote/estimate → "open" (no money yet). If cancelling a subscription → "open" (stopping money, not spending it).
+DUE vs PENDING: if the payment still needs to be made or collected → "due". If already paid and waiting on delivery/fulfillment/refund → "pending". If waiting on a non-financial response → "pending".
+BROKE vs DUE: if the item is non-functional/damaged and needs repair → "broke". If the item works but needs routine maintenance or replacement and the focus is the cost → "due".
+OPEN vs PENDING: if you have NOT yet reached out or taken action → "open". If you HAVE reached out and are waiting → "pending". "Schedule an appointment" with no outreach yet → "open". "Waiting to hear back about appointment" → "pending".
+LOST vs OPEN: if you previously had the item/document and it is now missing → "lost". If you are searching for something new (find a vendor, research a contractor) → "open".
+DIRTY vs OPEN: if the task involves organizing, cleaning, sorting, or tidying (physical or digital) → "dirty". If it is a general unresolved issue → "open".
 
 ─── PRIORITY RULES ─────────────────────────────────────────
 - "high"   → anything involving attorneys, courts, credit bureaus, money owed, legal deadlines,
