@@ -57,9 +57,9 @@ Status options (pick the most fitting "from" key):
 - "open"    → active issue needing resolution
 - "lost"    → missing document/item/info
 - "dirty"   → cleanup or organization task
-- "pending" → waiting on someone else to act
-- "draft"   → letter, email, or filing to send
-- "idea"    → project or build to launch
+- "pending" → waiting on someone else to respond or act — use this for attorney outreach, contractor follow-ups, agency complaints, government responses, vendor callbacks, or ANY task where you have already initiated contact and are waiting on a reply from a real person or organization
+- "draft"   → a letter, email, demand letter, complaint, or filing that still needs to be written or sent
+- "idea"    → a product, business, SaaS, or creative concept that hasn't been built or launched yet — do NOT use this for professional outreach, legal matters, or contacting people
 
 Today's date is ${today}.
 
@@ -70,7 +70,7 @@ Return exactly this shape:
   "status": one of the keys above,
   "priority": "high", "medium", or "low",
   "due_date": "YYYY-MM-DD" or null,
-  "notes": "any extra context worth capturing, or empty string"
+  "notes": "any extra context worth capturing — include names of attorneys, contractors, companies, or agencies mentioned, or empty string"
 }`,
         messages: [{ role: "user", content: prompt }],
       }),
