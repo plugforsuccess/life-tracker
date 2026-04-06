@@ -210,7 +210,9 @@ export default function TaskTracker() {
       .on("postgres_changes", { event: "*", schema: "public", table: "tasks" }, () => {
         loadTasks();
       })
-      .subscribe();
+      .subscribe((status, err) => {
+        if (err) console.error("Realtime subscription error:", err);
+      });
 
     return () => supabase.removeChannel(channel);
   }, []);
