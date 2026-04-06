@@ -32,43 +32,24 @@ const deleteTask = async (id) => {
     .eq("id", id);
 };
 
-// ─── AI AUTO-FILL ─────────────────────────────────────────────────────────────
+// ─── AI AUTO-FILL (via Supabase Edge Function) ──────────────────────────────
 async function aiAutoFill(prompt) {
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 1000,
-      system: `You are a task parsing assistant for a life/business task tracker. Given the user's plain-english description, extract structured task data.
-Respond ONLY with a valid JSON object — no markdown fences, no explanation, no extra text.
-
-Status options (pick the most fitting "from" key):
-- "broke"   → something broken needing repair
-- "open"    → active issue needing resolution
-- "lost"    → missing document/item/info
-- "dirty"   → cleanup or organization task
-- "pending" → waiting on someone else to act
-- "draft"   → letter, email, or filing to send
-- "idea"    → project or build to launch
-
-Today's date is ${new Date().toISOString().split("T")[0]}.
-
-Return exactly this shape:
-{
-  "title": "short, clear task title (max 8 words)",
-  "category": "Business" or "Personal",
-  "status": one of the keys above,
-  "priority": "high", "medium", or "low",
-  "due_date": "YYYY-MM-DD" or null,
-  "notes": "any extra context worth capturing, or empty string"
-}`,
-      messages: [{ role: "user", content: prompt }],
-    }),
-  });
-  const data = await res.json();
-  const text = data.content?.find(b => b.type === "text")?.text || "";
-  return JSON.parse(text.replace(/```json|```/g, "").trim());
+  const res = await fetch(
+    `${supabase.functionsUrl}/ai-autofill`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${supabase.supabaseKey}`,
+      },
+      body: JSON.stringify({ prompt }),
+    }
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `AI request failed (${res.status})`);
+  }
+  return await res.json();
 }
 
 // ─── CONSTANTS ───────────────────────────────────────────────────────────────
