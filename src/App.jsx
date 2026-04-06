@@ -1026,6 +1026,7 @@ export default function TaskTracker() {
                 }}
               />
               <button
+                type="button"
                 style={{
                   padding: "10px 14px", borderRadius: "6px",
                   background: G.accentGlow, border: `1px solid ${G.accent}`,
