@@ -94,21 +94,72 @@ const PRIORITY_MAP = Object.fromEntries(PRIORITIES.map(p => [p.key, p]));
 function now() { return new Date().toISOString(); }
 function logEntry(text) { return { timestamp: now(), text }; }
 
-// ─── DESIGN TOKENS ───────────────────────────────────────────────────────────
-const DARK = {
-  bg: "#0a0a0f", surface: "#111118", border: "#1e1e2e",
-  text: "#e8e8f0", muted: "#5a5a7a", accent: "#7c6af7",
-  accentGlow: "rgba(124,106,247,0.2)",
-  font: "'DM Mono','Courier New',monospace",
-  fontDisplay: "'Syne','Arial Black',sans-serif",
-};
-
-const LIGHT = {
-  bg: "#f4f4f8", surface: "#ffffff", border: "#e0e0ea",
-  text: "#0a0a0f", muted: "#8888aa", accent: "#7c6af7",
-  accentGlow: "rgba(124,106,247,0.12)",
-  font: "'DM Mono','Courier New',monospace",
-  fontDisplay: "'Syne','Arial Black',sans-serif",
+// ─── THEMES ─────────────────────────────────────────────────────────────────
+const THEMES = {
+  midnight: {
+    name: "Midnight", mode: "dark",
+    bg: "#0a0a0f", surface: "#111118", border: "#1e1e2e",
+    text: "#e8e8f0", muted: "#5a5a7a", accent: "#7c6af7",
+    accentGlow: "rgba(124,106,247,0.2)",
+    font: "'DM Mono','Courier New',monospace",
+    fontDisplay: "'Syne','Arial Black',sans-serif",
+  },
+  daylight: {
+    name: "Daylight", mode: "light",
+    bg: "#f4f4f8", surface: "#ffffff", border: "#e0e0ea",
+    text: "#0a0a0f", muted: "#8888aa", accent: "#7c6af7",
+    accentGlow: "rgba(124,106,247,0.12)",
+    font: "'DM Mono','Courier New',monospace",
+    fontDisplay: "'Syne','Arial Black',sans-serif",
+  },
+  forest: {
+    name: "Forest", mode: "dark",
+    bg: "#0b1210", surface: "#121f1c", border: "#1e3330",
+    text: "#d4ede8", muted: "#4a7a72", accent: "#2dd4a0",
+    accentGlow: "rgba(45,212,160,0.18)",
+    font: "'DM Mono','Courier New',monospace",
+    fontDisplay: "'Syne','Arial Black',sans-serif",
+  },
+  ember: {
+    name: "Ember", mode: "dark",
+    bg: "#110a08", surface: "#1c1210", border: "#2e1e1a",
+    text: "#f0ddd8", muted: "#7a4a42", accent: "#ff6b42",
+    accentGlow: "rgba(255,107,66,0.18)",
+    font: "'DM Mono','Courier New',monospace",
+    fontDisplay: "'Syne','Arial Black',sans-serif",
+  },
+  arctic: {
+    name: "Arctic", mode: "light",
+    bg: "#eef4f8", surface: "#ffffff", border: "#ccdde8",
+    text: "#0a1520", muted: "#7a9ab0", accent: "#0077cc",
+    accentGlow: "rgba(0,119,204,0.12)",
+    font: "'DM Mono','Courier New',monospace",
+    fontDisplay: "'Syne','Arial Black',sans-serif",
+  },
+  gold: {
+    name: "Gold", mode: "dark",
+    bg: "#0f0e08", surface: "#1a1810", border: "#2e2a18",
+    text: "#f0ead0", muted: "#7a7248", accent: "#d4a820",
+    accentGlow: "rgba(212,168,32,0.18)",
+    font: "'DM Mono','Courier New',monospace",
+    fontDisplay: "'Syne','Arial Black',sans-serif",
+  },
+  rose: {
+    name: "Rose", mode: "light",
+    bg: "#fdf4f6", surface: "#ffffff", border: "#f0d8de",
+    text: "#1a080d", muted: "#b07888", accent: "#d4205a",
+    accentGlow: "rgba(212,32,90,0.1)",
+    font: "'DM Mono','Courier New',monospace",
+    fontDisplay: "'Syne','Arial Black',sans-serif",
+  },
+  slate: {
+    name: "Slate", mode: "dark",
+    bg: "#0d1117", surface: "#161b22", border: "#21262d",
+    text: "#e6edf3", muted: "#6e7681", accent: "#58a6ff",
+    accentGlow: "rgba(88,166,255,0.18)",
+    font: "'DM Mono','Courier New',monospace",
+    fontDisplay: "'Syne','Arial Black',sans-serif",
+  },
 };
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
@@ -121,10 +172,8 @@ const BLANK = { title:"", category:"Business", status:"broke", priority:"medium"
 
 // ─── APP ─────────────────────────────────────────────────────────────────────
 export default function TaskTracker() {
-  const [darkMode, setDarkMode] = useState(() => {
-    const stored = localStorage.getItem("lcc-theme");
-    if (stored) return stored === "dark";
-    return true;
+  const [themeKey, setThemeKey] = useState(() => {
+    return localStorage.getItem("lcc-theme") || "midnight";
   });
   const [tasks,          setTasks]          = useState([]);
   const [filter,         setFilter]         = useState("all");
@@ -136,7 +185,7 @@ export default function TaskTracker() {
   const [loading,        setLoading]        = useState(true);
 
   // ─── DESIGN TOKENS (reactive) ──────────────────────────────────────────────
-  const G = darkMode ? DARK : LIGHT;
+  const G = THEMES[themeKey];
 
   const base = {
     root:       { minHeight: "100vh", background: G.bg, color: G.text, fontFamily: G.font, padding: "0 0 80px 0" },
@@ -184,7 +233,7 @@ export default function TaskTracker() {
     return { label: `DUE ${due.toLocaleDateString("en-US", { month:"short", day:"numeric" })}`, color: G.muted };
   }
 
-  // Modal modes: null | "add" | "edit" | "log"
+  // Modal modes: null | "add" | "edit" | "log" | "theme"
   const [modalMode,  setModalMode]  = useState(null);
   const [editTarget, setEditTarget] = useState(null);  // task being edited
   const [logTarget,  setLogTarget]  = useState(null);  // task whose log is open
@@ -419,7 +468,7 @@ export default function TaskTracker() {
         ::-webkit-scrollbar { width: 4px; height: 4px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: ${G.border}; border-radius: 2px; }
-        input[type=date] { color-scheme: ${darkMode ? "dark" : "light"}; }
+        input[type=date] { color-scheme: ${G.mode}; }
         input[type=date]::-webkit-calendar-picker-indicator { filter: invert(0.4) sepia(1) saturate(3) hue-rotate(220deg); cursor: pointer; }
       `}</style>
 
@@ -430,11 +479,7 @@ export default function TaskTracker() {
           <p style={base.logo}>LIFE COMMAND CENTER</p>
           <h1 style={base.headline}>STATUS TRACKER</h1>
           <button
-            onClick={() => {
-              const next = !darkMode;
-              setDarkMode(next);
-              localStorage.setItem("lcc-theme", next ? "dark" : "light");
-            }}
+            onClick={() => setModalMode("theme")}
             style={{
               position: "absolute",
               top: "20px",
@@ -447,7 +492,7 @@ export default function TaskTracker() {
               cursor: "pointer",
               color: G.text,
             }}>
-            {darkMode ? "☀️" : "🌙"}
+            🎨
           </button>
         </div>
 
@@ -723,6 +768,51 @@ export default function TaskTracker() {
             <div style={base.modalBtns}>
               <button style={dyn.secondaryBtn} onClick={closeModal}>Close</button>
               <button style={dyn.primaryBtn} onClick={handleAddLogNote}>ADD NOTE</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══ THEME PICKER MODAL ══ */}
+      {modalMode === "theme" && (
+        <div style={base.modal} onClick={closeModal}>
+          <div style={base.modalBox} onClick={e => e.stopPropagation()}>
+            <h2 style={{ fontFamily: G.fontDisplay, fontSize:"14px", fontWeight:900, margin:"0 0 20px", color: G.text, letterSpacing:"2px" }}>CHOOSE YOUR THEME</h2>
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(100px, 1fr))", gap:"10px" }}>
+              {Object.entries(THEMES).map(([key, theme]) => {
+                const selected = key === themeKey;
+                return (
+                  <div
+                    key={key}
+                    onClick={() => { setThemeKey(key); localStorage.setItem("lcc-theme", key); }}
+                    style={{
+                      padding: "14px 8px",
+                      borderRadius: "10px",
+                      border: selected ? `2px solid ${theme.accent}` : `1px solid ${G.border}`,
+                      background: selected ? theme.surface : G.surface,
+                      color: selected ? theme.text : G.muted,
+                      cursor: "pointer",
+                      textAlign: "center",
+                      transition: "all 0.15s",
+                      position: "relative",
+                    }}>
+                    {selected && (
+                      <span style={{ position:"absolute", top:"6px", right:"8px", fontSize:"12px" }}>✓</span>
+                    )}
+                    <div style={{
+                      width: "28px", height: "28px", borderRadius: "50%",
+                      background: theme.accent, margin: "0 auto 8px",
+                      border: `3px solid ${theme.surface}`,
+                      boxShadow: `0 0 0 1px ${theme.border}`,
+                    }} />
+                    <div style={{ fontFamily: G.fontDisplay, fontSize:"11px", fontWeight:700, letterSpacing:"0.5px" }}>{theme.name}</div>
+                    <div style={{ fontSize:"8px", letterSpacing:"1.5px", color: selected ? theme.muted : G.muted, marginTop:"4px", textTransform:"uppercase" }}>{theme.mode}</div>
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{ marginTop:"16px", display:"flex", justifyContent:"flex-end" }}>
+              <button style={dyn.secondaryBtn} onClick={closeModal}>Close</button>
             </div>
           </div>
         </div>
