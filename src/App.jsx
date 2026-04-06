@@ -160,6 +160,14 @@ const THEMES = {
     font: "'DM Mono','Courier New',monospace",
     fontDisplay: "'Syne','Arial Black',sans-serif",
   },
+  sandstone: {
+    name: "Sand & Stone", mode: "light",
+    bg: "#faf6f0", surface: "#ffffff", border: "#e8ddd0",
+    text: "#1a1208", muted: "#9a8878", accent: "#a07850",
+    accentGlow: "rgba(160,120,80,0.12)",
+    font: "'DM Mono','Courier New',monospace",
+    fontDisplay: "'Syne','Arial Black',sans-serif",
+  },
 };
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
