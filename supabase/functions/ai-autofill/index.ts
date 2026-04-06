@@ -71,35 +71,46 @@ Pick exactly one "from" key:
               Use "pending" when it HAS gone out and you are waiting for a reply.
 - "idea"    → a product, business, SaaS tool, creative concept, or project that has not been built or launched.
               Only use this for building and launching things — NOT for contacting people or legal matters.
+- "due"     → a bill, invoice, rent payment, contractor payment, subscription, tax, or any amount of money
+              that needs to be paid or collected. Use this when money is owed in either direction —
+              money you owe OR money owed to you (rent from tenants, client invoices, reimbursements).
+              Keywords: rent, invoice, bill, payment, fee, owe, collect, charge, reimburse, due.
 
-DRAFT vs PENDING: if the letter/email/filing has not been written → "draft". If it has been sent and you are waiting → "pending". If unclear, default to "pending".
-IDEA vs PENDING: if there is a real human or organization to respond to you → "pending". If it is a concept to build → "idea".
+DRAFT vs PENDING: if the letter/email/filing has not been written → "draft". If sent and waiting on reply → "pending". If unclear → "pending".
+IDEA vs PENDING: if there is a real human or organization to respond → "pending". If it is a concept to build → "idea".
+DUE vs OPEN: if money is explicitly involved (rent, invoice, bill, payment) → "due". If it is a general unresolved issue with no payment component → "open".
+DUE vs PENDING: if you are waiting on a payment to arrive or be made → "due". If you are waiting on a non-financial response or action → "pending".
 
 ─── PRIORITY RULES ─────────────────────────────────────────
 - "high"   → anything involving attorneys, courts, credit bureaus, money owed, legal deadlines,
              tenant issues, evictions, property damage, insurance disputes, government filings,
-             or any task with a specific deadline mentioned (by Friday, end of month, next week)
-- "medium" → follow-ups, admin tasks, business ideas in early stages, non-urgent repairs
+             overdue payments, or any task with a specific deadline mentioned (by Friday, end of month, next week)
+- "medium" → follow-ups, admin tasks, business ideas in early stages, non-urgent repairs, upcoming bills not yet overdue
 - "low"    → anything the user describes as eventually, someday, when I get to it, or no urgency implied
-- When in doubt, default to "medium" — never guess "low" for legal or financial matters
+- When in doubt, default to "medium" — never guess "low" for legal, financial, or payment matters
+- Overdue payments are always "high" regardless of amount
 
 ─── CATEGORY RULES ──────────────────────────────────────────
-- "Business" → rental property, tenants, insurance agency, PermitCheck, Airbnb listings,
-               contractors doing business work, employees, LLC matters, business filings
+- "Business" → rental property income, tenant rent collection, contractor invoices, insurance agency bills,
+               PermitCheck expenses, Airbnb payouts, LLC-related payments, business subscriptions,
+               employee payroll, property taxes, business utilities
 - "Personal" → credit disputes, consumer protection cases, personal legal matters, CFPB complaints,
-               anything affecting personal credit score or personal finances — even if the original
-               transaction involved a business (e.g. BriteBox, Service Finance, Coolray)
-- When a legal or credit matter affects personal finances or credit → always "Personal"
+               personal credit card bills, personal subscriptions, anything affecting personal credit score
+               or personal finances — even if the original transaction involved a business
+- Payment tasks: if the money flows through a business entity or involves a tenant/client → "Business".
+  If it is a personal expense or personal debt → "Personal".
 
 ─── TITLE RULES ─────────────────────────────────────────────
 - Max 7 words
-- Must include the main subject (attorney, faucet, letter, lease, etc.)
+- Must include the main subject (attorney, faucet, letter, rent, invoice, etc.)
 - Include the target or party if mentioned (BriteBox, Unit 2, CFPB, Service Finance, etc.)
+- For DUE → PAID tasks, include the dollar amount if mentioned and the party name
 - Never start with "I need to" or "Follow up on" — start with the action noun
+- Good: "Rent collection - Unit 3 April"
+- Good: "Contractor invoice - plumber $280"
 - Good: "Attorney outreach - BriteBox/Service Finance"
-- Good: "Fix leaking faucet - Unit 2"
-- Bad: "Contact attorneys for legal representation regarding consumer protection case"
-- Bad: "Follow up on the thing with the contractor"
+- Bad: "I need to collect rent from the tenant in Unit 3"
+- Bad: "Follow up on the payment from the contractor"
 
 ─── DUE DATE RULES ──────────────────────────────────────────
 - Only set due_date if the user mentions a specific date, day, or deadline
@@ -107,23 +118,26 @@ IDEA vs PENDING: if there is a real human or organization to respond to you → 
 - "end of month" → last day of the current month
 - "next week" → 7 days from today
 - "urgent", "ASAP", "soon", "quickly" → due_date: null, but set priority to "high"
-- Never invent or guess a due date — if unsure, return null
+- For rent tasks with no date mentioned → due_date: last day of current month
+- Never invent or guess a due date beyond these rules — if unsure, return null
 
 ─── NOTES RULES ─────────────────────────────────────────────
 - Always populate notes if ANY of these appear in the description:
   names of people or companies, dollar amounts, unit numbers, case numbers,
   attorney names, agency names, deadlines, or context that won't fit in the title
+- For DUE → PAID tasks always include: who owes what to whom, and the amount if mentioned
 - Keep notes under 15 words
 - Never leave notes empty if the title alone does not tell the full story
 - Good: "Coolray/BriteBox unauthorized financing — 81pt credit drop"
-- Good: "Tenant in Unit 3, 6 days past due"
+- Good: "Tenant Unit 3, $1,400 April rent, 6 days past due"
+- Good: "Plumber invoice $280, work completed 4/1"
 
 ─── OUTPUT SHAPE ────────────────────────────────────────────
 Return exactly this JSON and nothing else:
 {
   "title": "max 7 words, action noun first",
   "category": "Business" or "Personal",
-  "status": one of: broke, open, lost, dirty, pending, draft, idea,
+  "status": one of: broke, open, lost, dirty, pending, draft, idea, due,
   "priority": "high", "medium", or "low",
   "due_date": "YYYY-MM-DD" or null,
   "notes": "under 15 words of key context, or empty string"
