@@ -416,7 +416,6 @@ export default function TaskTracker() {
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;900&family=DM+Mono:wght@400;500&display=swap');
         * { box-sizing: border-box; }
         body { margin: 0; background: #0a0a0f; }
         ::-webkit-scrollbar { width: 4px; height: 4px; }
