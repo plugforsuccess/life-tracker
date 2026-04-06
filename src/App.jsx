@@ -203,7 +203,7 @@ function newChecklistItemId() {
 }
 
 // ─── BLANK FORM STATE ─────────────────────────────────────────────────────────
-const BLANK = { title:"", category:"Business", status:"broke", priority:"medium", due_date:"", notes:"", blocked_by:[], checklist:[] };
+const BLANK = { title:"", category:"Business", status:"broke", priority:"medium", due_date:"", notes:"", blocked_by:[], checklist:[], log_checklist_items: false };
 
 // ─── APP ─────────────────────────────────────────────────────────────────────
 export default function TaskTracker() {
@@ -290,6 +290,7 @@ export default function TaskTracker() {
   // Checklist form state
   const [newChecklist,    setNewChecklist]    = useState([]);
   const [newChecklistItem, setNewChecklistItem] = useState("");
+  const [newLogChecklistItems, setNewLogChecklistItems] = useState(false);
 
   useEffect(() => {
     loadTasks();
@@ -323,7 +324,7 @@ export default function TaskTracker() {
   // ── Open modals ──
   function openAdd() {
     setForm(BLANK); setAiPrompt(""); setAiError(""); setFormError(""); setSaving(false);
-    setNewChecklist([]); setNewChecklistItem("");
+    setNewChecklist([]); setNewChecklistItem(""); setNewLogChecklistItems(false);
     setModalMode("add");
   }
   function openEdit(task, e) {
@@ -339,6 +340,7 @@ export default function TaskTracker() {
       blocked_by: task.blocked_by || [],
     });
     setNewChecklist(task.checklist || []);
+    setNewLogChecklistItems(task.log_checklist_items || false);
     setModalMode("edit");
   }
   function openLog(task, e) {
@@ -352,7 +354,7 @@ export default function TaskTracker() {
     setForm(BLANK); setAiPrompt(""); setAiError(""); setNewLogNote("");
     setFormError(""); setSaving(false);
     setLogNoteError(""); setCopyConfirm(false); setLogSearch("");
-    setNewChecklist([]); setNewChecklistItem("");
+    setNewChecklist([]); setNewChecklistItem(""); setNewLogChecklistItems(false);
   }
 
   // ── AI auto-fill ──
@@ -389,6 +391,7 @@ export default function TaskTracker() {
         notes:       form.notes.trim(),
         blocked_by:  form.blocked_by,
         checklist:   newChecklist,
+        log_checklist_items: newLogChecklistItems,
         activity_log:[logEntry("Task created")],
       };
       const { data, error } = await addTask(payload);
@@ -414,8 +417,11 @@ export default function TaskTracker() {
       if (JSON.stringify(newChecklist) !== JSON.stringify(prev.checklist || [])) {
         changes.push(`Checklist updated (${newChecklist.length} items)`);
       }
+      if (newLogChecklistItems !== (prev.log_checklist_items || false)) {
+        changes.push(newLogChecklistItems ? "Item logging enabled" : "Item logging disabled");
+      }
       const newLog = changes.length ? [...(prev.activity_log||[]), logEntry(changes.join(" · "))] : (prev.activity_log||[]);
-      const patch = { title: form.title.trim(), category: form.category, status: form.status, priority: form.priority, due_date: form.due_date||null, notes: form.notes.trim(), blocked_by: form.blocked_by, checklist: newChecklist, activity_log: newLog };
+      const patch = { title: form.title.trim(), category: form.category, status: form.status, priority: form.priority, due_date: form.due_date||null, notes: form.notes.trim(), blocked_by: form.blocked_by, checklist: newChecklist, log_checklist_items: newLogChecklistItems, activity_log: newLog };
       const { error } = await updateTask(prev.id, patch);
       if (error) { setFormError(error.message || "Failed to save changes."); setSaving(false); return; }
       setTasks(ts => ts.map(t => t.id === prev.id ? { ...t, ...patch } : t));
@@ -500,12 +506,38 @@ export default function TaskTracker() {
   // ── Checklist data functions ──
   const toggleChecklistItem = async (taskId, itemId) => {
     const task = tasks.find(t => t.id === taskId);
-    if (!task || !STATUS_MAP[task.status]?.next) return;
-    const updated = (task.checklist || []).map(item =>
+    if (!task) return;
+
+    // Resolved tasks are read-only
+    if (!STATUS_MAP[task.status]?.next) return;
+
+    const currentItem = (task.checklist || []).find(i => i.id === itemId);
+    if (!currentItem) return;
+
+    const isChecking = !currentItem.done;
+
+    const newChecklist = (task.checklist || []).map(item =>
       item.id === itemId ? { ...item, done: !item.done } : item
     );
-    await updateTask(taskId, { checklist: updated });
-    setTasks(ts => ts.map(t => t.id === taskId ? { ...t, checklist: updated } : t));
+
+    // Only log when checking an item (not unchecking) AND log_checklist_items is enabled
+    let newActivityLog = task.activity_log || [];
+    if (isChecking && task.log_checklist_items) {
+      const entry = logEntry(`✓ ${currentItem.text}`, "system");
+      newActivityLog = [...newActivityLog, entry];
+    }
+
+    const patch = { checklist: newChecklist };
+    if (isChecking && task.log_checklist_items) {
+      patch.activity_log = newActivityLog;
+    }
+
+    await updateTask(taskId, patch);
+    setTasks(ts => ts.map(t =>
+      t.id === taskId
+        ? { ...t, checklist: newChecklist, activity_log: newActivityLog }
+        : t
+    ));
   };
 
   const deleteChecklistItem = async (taskId, itemId) => {
@@ -737,6 +769,11 @@ export default function TaskTracker() {
                       </span>
                     ) : null;
                   })()}
+                  {task.log_checklist_items && (task.checklist || []).length > 0 && (
+                    <span style={{ fontSize: "9px", color: G.accent, letterSpacing: "1px" }}>
+                      📋 LOGGED
+                    </span>
+                  )}
                 </div>
 
                 {task.notes && <p style={{ fontSize:"11px", color: G.muted, marginTop:"6px", lineHeight:1.5 }}>{task.notes}</p>}
@@ -1011,6 +1048,48 @@ export default function TaskTracker() {
               <p style={{ fontSize: "9px", color: G.muted, margin: "-10px 0 16px", letterSpacing: "0.5px" }}>
                 Press Enter or tap + ADD after each item
               </p>
+            )}
+
+            {/* Log checklist items toggle */}
+            {newChecklist.length > 0 && (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  padding: "12px 14px",
+                  borderRadius: "8px",
+                  background: newLogChecklistItems ? `${G.accent}0f` : G.bg,
+                  border: `1px solid ${newLogChecklistItems ? G.accent + "44" : G.border}`,
+                  marginBottom: "16px",
+                  cursor: "pointer",
+                  transition: "all 0.2s",
+                }}
+                onClick={() => setNewLogChecklistItems(v => !v)}>
+                <div>
+                  <p style={{ fontSize: "12px", color: G.text, margin: "0 0 2px", fontWeight: 600 }}>
+                    Log each item when checked
+                  </p>
+                  <p style={{ fontSize: "10px", color: G.muted, margin: 0, lineHeight: 1.4 }}>
+                    {newLogChecklistItems
+                      ? "Each completed item will be timestamped in the activity log"
+                      : "Off — checklist progress tracked silently (good for shopping lists)"}
+                  </p>
+                </div>
+                {/* Toggle pill */}
+                <div style={{
+                  width: "36px", height: "20px", borderRadius: "10px", flexShrink: 0,
+                  background: newLogChecklistItems ? G.accent : G.border,
+                  position: "relative", transition: "background 0.2s", marginLeft: "12px",
+                }}>
+                  <div style={{
+                    width: "14px", height: "14px", borderRadius: "50%", background: "#fff",
+                    position: "absolute", top: "3px",
+                    left: newLogChecklistItems ? "19px" : "3px",
+                    transition: "left 0.2s",
+                  }} />
+                </div>
+              </div>
             )}
 
             {/* Blocked by */}
