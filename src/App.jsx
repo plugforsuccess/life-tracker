@@ -94,8 +94,10 @@ const CATEGORIES = ["Business", "Personal"];
 const STATUS_MAP   = Object.fromEntries(STATUSES.map(s => [s.key, s]));
 const PRIORITY_MAP = Object.fromEntries(PRIORITIES.map(p => [p.key, p]));
 
+const LOG_NOTE_MAX = 280;
+
 function now() { return new Date().toISOString(); }
-function logEntry(text) { return { timestamp: now(), text }; }
+function logEntry(text, type = "system") { return { timestamp: now(), text, type, starred: false }; }
 
 // ─── THEMES ─────────────────────────────────────────────────────────────────
 const THEMES = {
@@ -175,7 +177,18 @@ const THEMES = {
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 function fmtTime(iso) {
-  return new Date(iso).toLocaleString("en-US", { month:"short", day:"numeric", hour:"numeric", minute:"2-digit" });
+  return new Date(iso).toLocaleString("en-US", {
+    month: "short", day: "numeric", year: "numeric",
+    hour: "numeric", minute: "2-digit"
+  });
+}
+
+function latestUserNote(activity_log) {
+  if (!activity_log?.length) return null;
+  const userNotes = [...activity_log]
+    .reverse()
+    .filter(e => e.type === "user");
+  return userNotes[0] || null;
 }
 
 // ─── BLANK FORM STATE ─────────────────────────────────────────────────────────
@@ -254,6 +267,9 @@ export default function TaskTracker() {
   const [newLogNote, setNewLogNote] = useState("");
   const [formError,  setFormError]  = useState("");
   const [saving,     setSaving]     = useState(false);
+  const [logNoteError,  setLogNoteError]  = useState("");
+  const [copyConfirm,   setCopyConfirm]   = useState(false);
+  const [logSearch,     setLogSearch]     = useState("");
 
   // AI
   const [aiPrompt, setAiPrompt] = useState("");
@@ -318,6 +334,7 @@ export default function TaskTracker() {
     setModalMode(null); setEditTarget(null); setLogTarget(null);
     setForm(BLANK); setAiPrompt(""); setAiError(""); setNewLogNote("");
     setFormError(""); setSaving(false);
+    setLogNoteError(""); setCopyConfirm(false); setLogSearch("");
   }
 
   // ── AI auto-fill ──
@@ -374,6 +391,7 @@ export default function TaskTracker() {
       if (form.status   !== prev.status)   changes.push(`Status: ${prev.status.toUpperCase()} → ${form.status.toUpperCase()}`);
       if (form.priority !== prev.priority) changes.push(`Priority: ${prev.priority} → ${form.priority}`);
       if (form.due_date !== (prev.due_date||"")) changes.push(`Due date updated`);
+      if (form.notes.trim() !== (prev.notes||"").trim()) changes.push("Task notes updated");
       const newLog = changes.length ? [...(prev.activity_log||[]), logEntry(changes.join(" · "))] : (prev.activity_log||[]);
       const patch = { title: form.title.trim(), category: form.category, status: form.status, priority: form.priority, due_date: form.due_date||null, notes: form.notes.trim(), blocked_by: form.blocked_by, activity_log: newLog };
       const { error } = await updateTask(prev.id, patch);
@@ -417,16 +435,44 @@ export default function TaskTracker() {
 
   // ── Add activity log note ──
   async function handleAddLogNote() {
-    if (!newLogNote.trim() || !logTarget) { setFormError("Note cannot be empty."); return; }
-    setFormError(""); setSaving(true);
-    try {
-      const newLog = [...(logTarget.activity_log||[]), logEntry(newLogNote.trim())];
-      const { error } = await updateTask(logTarget.id, { activity_log: newLog });
-      if (error) { setFormError(error.message || "Failed to add note."); setSaving(false); return; }
-      setTasks(ts => ts.map(t => t.id === logTarget.id ? { ...t, activity_log: newLog } : t));
-      setLogTarget(lt => ({ ...lt, activity_log: newLog }));
-      setNewLogNote(""); setSaving(false);
-    } catch (err) { setFormError(err.message || "Something went wrong."); setSaving(false); }
+    if (!newLogNote.trim()) {
+      setLogNoteError("Note can't be empty.");
+      setTimeout(() => setLogNoteError(""), 2500);
+      return;
+    }
+    setLogNoteError("");
+    const entry = logEntry(newLogNote.trim(), "user");
+    const newLog = [...(logTarget.activity_log||[]), entry];
+    await updateTask(logTarget.id, { activity_log: newLog });
+    setTasks(ts => ts.map(t => t.id === logTarget.id ? { ...t, activity_log: newLog } : t));
+    setLogTarget(lt => ({ ...lt, activity_log: newLog }));
+    setNewLogNote("");
+  }
+
+  // ── Delete individual user log entry ──
+  async function handleDeleteLogEntry(taskId, entryIndex) {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+    const originalIndex = (task.activity_log.length - 1) - entryIndex;
+    const entry = task.activity_log[originalIndex];
+    if (entry.type === "system" || !entry.type) return;
+    const newLog = task.activity_log.filter((_, i) => i !== originalIndex);
+    await updateTask(taskId, { activity_log: newLog });
+    setTasks(ts => ts.map(t => t.id === taskId ? { ...t, activity_log: newLog } : t));
+    setLogTarget(lt => ({ ...lt, activity_log: newLog }));
+  }
+
+  // ── Star/unstar log entry ──
+  async function handleStarLogEntry(taskId, entryIndex) {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+    const originalIndex = (task.activity_log.length - 1) - entryIndex;
+    const newLog = task.activity_log.map((e, i) =>
+      i === originalIndex ? { ...e, starred: !e.starred } : e
+    );
+    await updateTask(taskId, { activity_log: newLog });
+    setTasks(ts => ts.map(t => t.id === taskId ? { ...t, activity_log: newLog } : t));
+    setLogTarget(lt => ({ ...lt, activity_log: newLog }));
   }
 
   // ── Stats ──
@@ -627,6 +673,22 @@ export default function TaskTracker() {
 
                 {task.notes && <p style={{ fontSize:"11px", color: G.muted, marginTop:"6px", lineHeight:1.5 }}>{task.notes}</p>}
 
+                {(() => {
+                  const latest = latestUserNote(task.activity_log);
+                  return latest ? (
+                    <p style={{
+                      fontSize: "10px",
+                      color: G.accent,
+                      marginTop: "5px",
+                      lineHeight: 1.4,
+                      opacity: 0.85,
+                      fontStyle: "italic",
+                    }}>
+                      📝 {latest.text.length > 60 ? latest.text.slice(0, 60) + "…" : latest.text}
+                    </p>
+                  ) : null;
+                })()}
+
                 {/* Expanded actions */}
                 {expanded && (
                   <div onClick={e => e.stopPropagation()}>
@@ -767,35 +829,121 @@ export default function TaskTracker() {
       {modalMode === "log" && logTarget && (
         <div style={base.modal} onClick={closeModal}>
           <div style={base.modalBox} onClick={e => e.stopPropagation()}>
-            <h2 style={{ fontFamily: G.fontDisplay, fontSize:"14px", fontWeight:900, margin:"0 0 4px", color: G.text }}>ACTIVITY LOG</h2>
-            <p style={{ fontSize:"11px", color: G.muted, margin:"0 0 20px", lineHeight:1.4 }}>{logTarget.title}</p>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "4px" }}>
+              <div>
+                <h2 style={{ fontFamily: G.fontDisplay, fontSize: "14px", fontWeight: 900, margin: 0, color: G.text }}>
+                  ACTIVITY LOG
+                </h2>
+                <p style={{ fontSize: "11px", color: G.muted, margin: "4px 0 0", lineHeight: 1.4 }}>{logTarget.title}</p>
+              </div>
+              <button
+                style={{ padding: "5px 10px", borderRadius: "4px", background: "transparent", border: `1px solid ${G.border}`, color: G.muted, fontSize: "9px", fontFamily: G.font, letterSpacing: "1px", cursor: "pointer" }}
+                onClick={() => {
+                  const text = [...(logTarget.activity_log||[])]
+                    .map(e => `[${fmtTime(e.timestamp)}]${e.starred ? " ★" : ""} ${e.text}`)
+                    .join("\n");
+                  navigator.clipboard.writeText(`${logTarget.title}\n${"─".repeat(40)}\n${text}`);
+                  setCopyConfirm(true);
+                  setTimeout(() => setCopyConfirm(false), 2000);
+                }}>
+                {copyConfirm ? "✓ COPIED" : "COPY LOG"}
+              </button>
+            </div>
+
+            <div style={{ marginBottom: "20px" }} />
+
+            {/* Search (only when > 6 entries) */}
+            {(logTarget.activity_log||[]).length > 6 && (
+              <input
+                style={{ ...base.input, marginBottom: "12px", fontSize: "12px" }}
+                placeholder="Search log…"
+                value={logSearch}
+                onChange={e => setLogSearch(e.target.value)}
+              />
+            )}
 
             {/* Log entries */}
             <div style={{ display:"flex", flexDirection:"column", gap:"8px", marginBottom:"20px", maxHeight:"280px", overflowY:"auto" }}>
               {(logTarget.activity_log||[]).length === 0 && (
                 <p style={{ fontSize:"11px", color: G.muted }}>No activity yet.</p>
               )}
-              {[...(logTarget.activity_log||[])].reverse().map((entry, i) => (
-                <div key={i} style={{ padding:"10px 12px", background: G.bg, borderRadius:"6px", border:`1px solid ${G.border}` }}>
-                  <p style={{ fontSize:"9px", color: G.muted, margin:"0 0 4px", letterSpacing:"0.5px" }}>{fmtTime(entry.timestamp)}</p>
-                  <p style={{ fontSize:"12px", color: G.text, margin:0, lineHeight:1.4 }}>{entry.text}</p>
-                </div>
-              ))}
+              {(() => {
+                const sortedLog = [...(logTarget.activity_log||[])]
+                  .reverse()
+                  .sort((a, b) => (b.starred ? 1 : 0) - (a.starred ? 1 : 0));
+                const filteredLog = sortedLog.filter(e =>
+                  !logSearch.trim() || e.text.toLowerCase().includes(logSearch.toLowerCase())
+                );
+                return filteredLog.map((entry, i) => {
+                  const isUser = entry.type === "user" || (!entry.type && entry.text && !entry.text.includes("→") && entry.text !== "Task created" && !entry.text.startsWith("Marked"));
+                  return (
+                    <div key={i} style={{
+                      padding: "10px 12px",
+                      background: isUser ? G.surface : "transparent",
+                      borderRadius: "6px",
+                      border: isUser ? `1px solid ${G.border}` : "none",
+                      borderLeft: isUser ? `3px solid ${G.accent}` : `2px solid ${G.border}`,
+                      paddingLeft: isUser ? "12px" : "10px",
+                    }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
+                        <p style={{ fontSize: "9px", color: G.muted, margin: 0, letterSpacing: "0.5px" }}>
+                          {isUser ? "📝 " : "⚙️ "}{fmtTime(entry.timestamp)}
+                        </p>
+                        <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
+                          <button
+                            style={{ background: "transparent", border: "none", color: entry.starred ? "#ffc107" : G.muted, fontSize: "12px", cursor: "pointer", padding: "0 4px" }}
+                            onClick={() => handleStarLogEntry(logTarget.id, i)}>
+                            {entry.starred ? "★" : "☆"}
+                          </button>
+                          {isUser && (
+                            <button
+                              style={{ background: "transparent", border: "none", color: G.muted, fontSize: "10px", cursor: "pointer", padding: "0 4px" }}
+                              onClick={() => handleDeleteLogEntry(logTarget.id, i)}>
+                              ✕
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      <p style={{
+                        fontSize: isUser ? "12px" : "11px",
+                        color: isUser ? G.text : G.muted,
+                        margin: 0, lineHeight: 1.5,
+                        fontStyle: isUser ? "normal" : "italic",
+                      }}>
+                        {entry.starred && <span style={{ color: "#ffc107", marginRight: "6px" }}>★</span>}
+                        {entry.text}
+                      </p>
+                    </div>
+                  );
+                });
+              })()}
             </div>
 
             {/* Add note */}
             <label style={base.label}>Add Note</label>
             <textarea
-              style={{ ...base.input, minHeight:"52px", resize:"vertical", marginBottom:"8px" }}
+              style={{ ...base.input, minHeight: "56px", resize: "vertical", marginBottom: "4px" }}
               placeholder={`e.g. "Called attorney — left voicemail" or "Contractor quoted $850"`}
               value={newLogNote}
+              maxLength={LOG_NOTE_MAX}
               onChange={e => setNewLogNote(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleAddLogNote(); }}
             />
-            {formError && <p style={{ fontSize:"11px", color:"#ff4444", margin:"0 0 8px", lineHeight:1.4 }}>{formError}</p>}
+            {logNoteError && (
+              <p style={{ fontSize: "10px", color: "#ff4444", margin: "-10px 0 10px", letterSpacing: "0.5px" }}>
+                {logNoteError}
+              </p>
+            )}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+              <p style={{ fontSize: "9px", color: G.muted, margin: 0, letterSpacing: "0.5px" }}>⌘+Enter to add</p>
+              <p style={{ fontSize: "9px", color: newLogNote.length > LOG_NOTE_MAX * 0.9 ? "#ffc107" : G.muted, margin: 0 }}>
+                {newLogNote.length} / {LOG_NOTE_MAX}
+              </p>
+            </div>
             <div style={base.modalBtns}>
-              <button type="button" style={dyn.secondaryBtn} onClick={closeModal} disabled={saving}>Close</button>
-              <button type="button" style={{ ...dyn.primaryBtn, opacity: saving ? 0.6 : 1, cursor: saving ? "not-allowed" : "pointer" }} onClick={handleAddLogNote} disabled={saving}>
-                {saving ? "SAVING…" : "ADD NOTE"}
+              <button type="button" style={dyn.secondaryBtn} onClick={closeModal}>Close</button>
+              <button type="button" style={dyn.primaryBtn} onClick={handleAddLogNote}>
+                ADD NOTE
               </button>
             </div>
           </div>
