@@ -220,6 +220,7 @@ export default function TaskTracker() {
   const [dueFilter,      setDueFilter]      = useState("all");  // all | week | today | overdue
   const [expandedId,     setExpandedId]     = useState(null);
   const [loading,        setLoading]        = useState(true);
+  const [filtersOpen,    setFiltersOpen]    = useState(false);
 
   // ─── DESIGN TOKENS (reactive) ──────────────────────────────────────────────
   const G = THEMES[themeKey];
@@ -229,7 +230,7 @@ export default function TaskTracker() {
     header:     { borderBottom: `1px solid ${G.border}`, padding: "24px 20px 16px", position: "sticky", top: 0, background: G.bg, zIndex: 100 },
     logo:       { fontFamily: G.fontDisplay, fontSize: "11px", letterSpacing: "4px", color: G.accent, textTransform: "uppercase", margin: 0 },
     headline:   { fontFamily: G.fontDisplay, fontSize: "22px", fontWeight: 900, margin: "4px 0 0", letterSpacing: "-0.5px", color: G.text },
-    filterRow:  { display: "flex", gap: "8px", padding: "10px 20px", overflowX: "auto", borderBottom: `1px solid ${G.border}` },
+    filterRow:  { display: "flex", gap: "6px", padding: "10px 20px", overflowX: "auto", borderBottom: `1px solid ${G.border}`, flexWrap: "wrap" },
     taskList:   { padding: "16px 20px", display: "flex", flexDirection: "column", gap: "10px" },
     statsRow:   { display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "8px", padding: "12px 20px", borderBottom: `1px solid ${G.border}` },
     statBox:    { background: G.surface, border: `1px solid ${G.border}`, borderRadius: "8px", padding: "10px 8px", textAlign: "center" },
@@ -247,8 +248,16 @@ export default function TaskTracker() {
   };
 
   const dyn = {
-    filterBtn:   (active, color) => ({ padding: "5px 12px", borderRadius: "4px", border: `1px solid ${active ? color : G.border}`, background: active ? `${color}22` : "transparent", color: active ? color : G.muted, fontSize: "10px", letterSpacing: "1.5px", fontFamily: G.font, cursor: "pointer", whiteSpace: "nowrap", transition: "all 0.15s", fontWeight: active ? 700 : 400 }),
-    card:        (color, blocked) => ({ background: G.surface, border: `1px solid ${blocked ? "#ff444433" : G.border}`, borderLeft: `3px solid ${color}`, borderRadius: "8px", padding: "14px 16px", cursor: "default", opacity: blocked ? 0.78 : 1, transition: "opacity 0.2s" }),
+    filterBtn:   (active, color) => ({ padding: "6px 12px", borderRadius: "6px", border: `1px solid ${active ? color : G.border}`, background: active ? `${color}22` : "transparent", color: active ? color : G.muted, fontSize: "11px", letterSpacing: "0.5px", fontFamily: G.font, cursor: "pointer", whiteSpace: "nowrap", transition: "all 0.15s", fontWeight: active ? 700 : 400 }),
+    card:        (color, blocked, { isOverdue, isHigh, isResolved } = {}) => ({
+      background: isResolved ? (G.mode === "dark" ? `${G.surface}cc` : `${G.surface}`) : isOverdue ? (G.mode === "dark" ? "#1a0a0a" : "#fff5f5") : isHigh ? (G.mode === "dark" ? "#1a0f0a" : "#fff8f5") : G.surface,
+      border: `1px solid ${blocked ? "#ff444433" : isOverdue ? "#ff444422" : G.border}`,
+      borderLeft: `3px solid ${isResolved ? G.muted : color}`,
+      borderRadius: "8px", padding: "14px 16px",
+      cursor: "pointer", opacity: blocked ? 0.78 : isResolved ? 0.65 : 1,
+      transition: "all 0.2s",
+      WebkitTapHighlightColor: "transparent",
+    }),
     badge:       (color) => ({ fontSize: "9px", letterSpacing: "1.5px", padding: "2px 8px", borderRadius: "3px", border: `1px solid ${color}`, color, whiteSpace: "nowrap" }),
     catTag:      (cat)   => ({ fontSize: "9px", letterSpacing: "1px", color: cat === "Business" ? "#7c6af7" : "#ff8c42", textTransform: "uppercase" }),
     pairOption:  (sel)   => ({ padding: "10px 8px", borderRadius: "6px", border: `1px solid ${sel ? G.accent : G.border}`, background: sel ? G.accentGlow : "transparent", color: sel ? G.accent : G.muted, fontSize: "10px", cursor: "pointer", textAlign: "center", fontFamily: G.font, transition: "all 0.15s" }),
@@ -613,11 +622,14 @@ export default function TaskTracker() {
   return (
     <>
       <style>{`
-        * { box-sizing: border-box; }
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
         body { margin: 0; background: ${G.bg}; }
         ::-webkit-scrollbar { width: 4px; height: 4px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: ${G.border}; border-radius: 2px; }
+        button:active { transform: scale(0.96); }
+        .lcc-stat:active { transform: scale(0.95); opacity: 0.8; }
+        .lcc-card:active { transform: scale(0.985); }
         input[type=date] { color-scheme: ${G.mode}; }
         input[type=date]::-webkit-calendar-picker-indicator { filter: invert(0.4) sepia(1) saturate(3) hue-rotate(220deg); cursor: pointer; }
       `}</style>
@@ -652,74 +664,125 @@ export default function TaskTracker() {
           const totalItems = tasksWithChecklists.reduce((sum, t) => sum + t.checklist.length, 0);
           const doneItems = tasksWithChecklists.reduce((sum, t) => sum + t.checklist.filter(i => i.done).length, 0);
           const showChecklist = totalItems > 0;
+          const stats = [
+            { label:"ACTIVE",   val: activeTasks.length, color:"#ffc107", action: () => { setFilter("all"); setDueFilter("all"); setPriorityFilter("all"); if (showResolved) { setShowResolved(false); localStorage.setItem("lcc-show-resolved","false"); } } },
+            { label:"DONE",     val: resolvedTasks.length, color:"#00c896", action: () => { setFilter("all"); if (!showResolved) { setShowResolved(true); localStorage.setItem("lcc-show-resolved","true"); } } },
+            { label:"HIGH",     val: highCount,          color:"#ff4444", action: () => { setPriorityFilter(priorityFilter === "high" ? "all" : "high"); } },
+            { label:"OVERDUE",  val: overdueCount,       color: overdueCount > 0 ? "#ff4444" : G.muted, action: () => { setDueFilter(dueFilter === "overdue" ? "all" : "overdue"); } },
+          ];
           return (
             <div style={{ ...base.statsRow, gridTemplateColumns: showChecklist ? "repeat(5,1fr)" : "repeat(4,1fr)" }}>
-              {[
-                { label:"ACTIVE",   val: activeTasks.length, color:"#ffc107" },
-                { label:"DONE",     val: resolvedTasks.length, color:"#00c896" },
-                { label:"🔥 HIGH",  val: highCount,          color:"#ff4444" },
-                { label:"OVERDUE",  val: overdueCount,       color: overdueCount > 0 ? "#ff4444" : G.muted },
-              ].map(st => (
-                <div key={st.label} style={base.statBox}>
+              {stats.map(st => (
+                <div key={st.label} className="lcc-stat" onClick={st.action} style={{
+                  ...base.statBox,
+                  cursor: "pointer",
+                  transition: "all 0.15s",
+                }}>
                   <span style={dyn.statNum(st.color)}>{st.val}</span>
                   <span style={{ fontSize:"8px", letterSpacing:"1px", color: G.muted, display:"block", marginTop:"2px" }}>{st.label}</span>
                 </div>
               ))}
               {showChecklist && (
-                <div style={base.statBox}>
+                <div style={{ ...base.statBox, cursor: "default" }}>
                   <span style={dyn.statNum(G.accent)}>{doneItems}/{totalItems}</span>
-                  <span style={{ fontSize: "8px", letterSpacing: "1px", color: G.muted, display: "block", marginTop: "2px" }}>ITEMS</span>
+                  <span style={{ fontSize: "8px", letterSpacing: "1px", color: G.muted, display: "block", marginTop: "2px" }}>CHECKLIST</span>
                 </div>
               )}
             </div>
           );
         })()}
 
-        {/* ── Priority + Category + Due filters ── */}
-        <div style={base.filterRow}>
-          {[
-            { key:"all",    label:"ALL PRI", color: G.accent },
-            { key:"high",   label:"🔥 HIGH", color:"#ff4444" },
-            { key:"medium", label:"⚡ MED",  color:"#ffc107" },
-            { key:"low",    label:"🌀 LOW",  color: G.muted  },
-          ].map(f => (
-            <button key={f.key} style={dyn.filterBtn(priorityFilter===f.key, f.color)} onClick={() => setPriorityFilter(f.key)}>{f.label}</button>
-          ))}
-          <span style={{ width:"1px", background: G.border, flexShrink:0, margin:"0 2px" }} />
-          {["all","Business","Personal"].map(c => (
-            <button key={c} style={dyn.filterBtn(catFilter===c, c==="Personal" ? "#ff8c42" : G.accent)} onClick={() => setCatFilter(c)}>
-              {c==="all" ? "ALL CAT" : c.toUpperCase()}
-            </button>
-          ))}
-          <span style={{ width:"1px", background: G.border, flexShrink:0, margin:"0 2px" }} />
-          {[
-            { key:"all",     label:"ALL DUE"  },
-            { key:"today",   label:"TODAY"    },
-            { key:"week",    label:"THIS WEEK" },
-            { key:"overdue", label:"OVERDUE"  },
-          ].map(f => (
-            <button key={f.key} style={dyn.filterBtn(dueFilter===f.key, "#38bdf8")} onClick={() => setDueFilter(f.key)}>{f.label}</button>
-          ))}
-        </div>
+        {/* ── Filter toggle bar ── */}
+        {(() => {
+          const hasActiveFilters = priorityFilter !== "all" || catFilter !== "all" || dueFilter !== "all" || filter !== "all" || showResolved;
+          const activeCount = [priorityFilter !== "all", catFilter !== "all", dueFilter !== "all", filter !== "all", showResolved].filter(Boolean).length;
+          return (
+            <div style={{
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+              padding: "8px 20px", borderBottom: `1px solid ${G.border}`,
+              cursor: "pointer", WebkitTapHighlightColor: "transparent",
+            }} onClick={() => setFiltersOpen(v => !v)}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <span style={{ fontSize: "10px", letterSpacing: "1.5px", color: filtersOpen ? G.accent : G.muted, fontFamily: G.font, fontWeight: 600, transition: "color 0.15s" }}>
+                  FILTERS
+                </span>
+                {hasActiveFilters && (
+                  <span style={{
+                    fontSize: "9px", padding: "1px 6px", borderRadius: "8px",
+                    background: `${G.accent}22`, color: G.accent, fontFamily: G.font, fontWeight: 700,
+                  }}>{activeCount}</span>
+                )}
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                {hasActiveFilters && (
+                  <button
+                    onClick={e => {
+                      e.stopPropagation();
+                      setPriorityFilter("all"); setCatFilter("all"); setDueFilter("all"); setFilter("all");
+                      setShowResolved(false); localStorage.setItem("lcc-show-resolved", "false");
+                    }}
+                    style={{ fontSize: "9px", letterSpacing: "1px", color: G.muted, background: "transparent", border: `1px solid ${G.border}`, borderRadius: "4px", padding: "2px 8px", cursor: "pointer", fontFamily: G.font }}>
+                    CLEAR
+                  </button>
+                )}
+                <span style={{ fontSize: "12px", color: G.muted, transition: "transform 0.2s", transform: filtersOpen ? "rotate(180deg)" : "rotate(0deg)", display: "inline-block" }}>▾</span>
+              </div>
+            </div>
+          );
+        })()}
 
-        {/* ── Status pair filters with counts ── */}
-        <div style={base.filterRow}>
-          {pairFilters.map(f => {
-            const count = pairCount(f.key);
-            return (
-              <button key={f.key} style={dyn.filterBtn(filter===f.key, f.color)} onClick={() => setFilter(f.key)}>
-                {f.label}{count > 0 ? ` (${count})` : ""}
+        {/* ── Collapsible filter rows ── */}
+        <div style={{
+          maxHeight: filtersOpen ? "300px" : "0",
+          overflow: "hidden",
+          transition: "max-height 0.25s ease",
+        }}>
+          {/* Priority + Category + Due filters */}
+          <div style={base.filterRow}>
+            {[
+              { key:"all",    label:"All Priority", color: G.accent },
+              { key:"high",   label:"High", color:"#ff4444" },
+              { key:"medium", label:"Medium",  color:"#ffc107" },
+              { key:"low",    label:"Low",  color: G.muted  },
+            ].map(f => (
+              <button key={f.key} style={dyn.filterBtn(priorityFilter===f.key, f.color)} onClick={() => setPriorityFilter(f.key)}>{f.label}</button>
+            ))}
+            <span style={{ width:"1px", background: G.border, flexShrink:0, margin:"0 2px" }} />
+            {["all","Business","Personal"].map(c => (
+              <button key={c} style={dyn.filterBtn(catFilter===c, c==="Personal" ? "#ff8c42" : G.accent)} onClick={() => setCatFilter(c)}>
+                {c==="all" ? "All" : c}
               </button>
-            );
-          })}
-          <span style={{ width:"1px", background: G.border, flexShrink:0, margin:"0 2px" }} />
-          <button style={dyn.filterBtn(showResolved, "#00c896")} onClick={() => {
-              const next = !showResolved;
-              setShowResolved(next);
-              localStorage.setItem("lcc-show-resolved", String(next));
-            }}>
-            {showResolved ? "HIDE DONE" : "SHOW DONE"}
-          </button>
+            ))}
+            <span style={{ width:"1px", background: G.border, flexShrink:0, margin:"0 2px" }} />
+            {[
+              { key:"all",     label:"All Due"  },
+              { key:"today",   label:"Today"    },
+              { key:"week",    label:"This Week" },
+              { key:"overdue", label:"Overdue"  },
+            ].map(f => (
+              <button key={f.key} style={dyn.filterBtn(dueFilter===f.key, "#38bdf8")} onClick={() => setDueFilter(f.key)}>{f.label}</button>
+            ))}
+          </div>
+
+          {/* Status pair filters with counts */}
+          <div style={base.filterRow}>
+            {pairFilters.map(f => {
+              const count = pairCount(f.key);
+              return (
+                <button key={f.key} style={dyn.filterBtn(filter===f.key, f.color)} onClick={() => setFilter(f.key)}>
+                  {f.label}{count > 0 ? ` (${count})` : ""}
+                </button>
+              );
+            })}
+            <span style={{ width:"1px", background: G.border, flexShrink:0, margin:"0 2px" }} />
+            <button style={dyn.filterBtn(showResolved, "#00c896")} onClick={() => {
+                const next = !showResolved;
+                setShowResolved(next);
+                localStorage.setItem("lcc-show-resolved", String(next));
+              }}>
+              {showResolved ? "Hide Done" : "Show Done"}
+            </button>
+          </div>
         </div>
 
         {/* ── Task list ── */}
@@ -742,20 +805,26 @@ export default function TaskTracker() {
             const blockers  = (task.blocked_by||[]).map(bid => tasks.find(t => t.id===bid)).filter(bt => bt && STATUS_MAP[bt.status]?.next);
             const isBlocked = blockers.length > 0;
             const logCount  = (task.activity_log||[]).length;
+            const isOverdue = dueInfo && dueInfo.color === "#ff4444" && !isResolved;
+            const isHigh    = task.priority === "high" && !isResolved;
 
             return (
-              <div key={task.id} style={dyn.card(s.color, isBlocked)}
+              <div key={task.id} className="lcc-card" style={dyn.card(s.color, isBlocked, { isOverdue, isHigh, isResolved })}
                 onClick={() => setExpandedId(expanded ? null : task.id)}>
 
                 {/* Top row */}
                 <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:"8px" }}>
-                  <span style={{ fontFamily: G.fontDisplay, fontSize:"14px", fontWeight:700, lineHeight:1.3, flex:1 }}>
+                  <span style={{
+                    fontFamily: G.fontDisplay, fontSize:"14px", fontWeight:700, lineHeight:1.3, flex:1,
+                    textDecoration: isResolved ? "line-through" : "none",
+                    color: isResolved ? G.muted : G.text,
+                  }}>
                     {isBlocked && <span style={{ color:"#ff4444", marginRight:"6px" }}>🔒</span>}
                     {task.title}
                   </span>
                   <div style={{ display:"flex", flexDirection:"column", gap:"4px", alignItems:"flex-end", flexShrink:0 }}>
                     <span style={dyn.badge(s.color)}>{s.emoji} {s.label}</span>
-                    <span style={dyn.badge(p.color)}>{p.icon} {p.label}</span>
+                    {!isResolved && <span style={dyn.badge(p.color)}>{p.icon} {p.label}</span>}
                   </div>
                 </div>
 
