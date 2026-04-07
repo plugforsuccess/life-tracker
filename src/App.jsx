@@ -378,6 +378,8 @@ export default function TaskTracker() {
   const [loading,        setLoading]        = useState(true);
   const [filtersOpen,    setFiltersOpen]    = useState(false);
   const [showReport,     setShowReport]     = useState(false);
+  const [reportKey,      setReportKey]      = useState(0);
+  const [copyReportConfirm, setCopyReportConfirm] = useState(false);
 
   // ─── DESIGN TOKENS (reactive) ──────────────────────────────────────────────
   const G = THEMES[themeKey];
@@ -896,7 +898,12 @@ export default function TaskTracker() {
           <p style={base.logo}>LIFE COMMAND CENTER</p>
           <h1 style={base.headline}>STATUS TRACKER</h1>
           <button
-            onClick={() => setShowReport(v => !v)}
+            onClick={() => {
+              setShowReport(v => {
+                if (!v) setReportKey(k => k + 1);
+                return !v;
+              });
+            }}
             style={{
               position: "absolute",
               top: "20px",
@@ -904,12 +911,18 @@ export default function TaskTracker() {
               background: showReport ? `${G.accent}22` : "transparent",
               border: `1px solid ${showReport ? G.accent : G.border}`,
               borderRadius: "6px",
-              padding: "6px 10px",
-              fontSize: "14px",
+              padding: "5px 10px",
+              fontSize: "10px",
+              letterSpacing: "1.5px",
+              fontFamily: G.font,
               cursor: "pointer",
               color: showReport ? G.accent : G.muted,
+              display: "flex",
+              alignItems: "center",
+              gap: "5px",
             }}>
-            📊
+            <span style={{ fontSize: "13px" }}>📊</span>
+            <span>REPORT</span>
           </button>
           <button
             onClick={() => setModalMode("theme")}
@@ -930,7 +943,7 @@ export default function TaskTracker() {
         </div>
 
         {/* ── Stats ── */}
-        {(() => {
+        {!showReport && (() => {
           const tasksWithChecklists = tasks.filter(t => (t.checklist || []).length > 0);
           const totalItems = tasksWithChecklists.reduce((sum, t) => sum + t.checklist.length, 0);
           const doneItems = tasksWithChecklists.reduce((sum, t) => sum + t.checklist.filter(i => i.done).length, 0);
@@ -1027,7 +1040,7 @@ export default function TaskTracker() {
         })()}
 
         {/* ── Filter toggle bar ── */}
-        {(() => {
+        {!showReport && (() => {
           const hasActiveFilters = priorityFilter !== "all" || catFilter !== "all" || dueFilter !== "all" || filter !== "all" || showResolved || resolvedOnly;
           const activeCount = [priorityFilter !== "all", catFilter !== "all", dueFilter !== "all", filter !== "all", showResolved, resolvedOnly].filter(Boolean).length;
           return (
@@ -1070,7 +1083,7 @@ export default function TaskTracker() {
         })()}
 
         {/* ── Collapsible filter rows ── */}
-        <div style={{
+        {!showReport && <div style={{
           maxHeight: filtersOpen ? "300px" : "0",
           overflow: "hidden",
           transition: "max-height 0.25s ease",
@@ -1129,11 +1142,25 @@ export default function TaskTracker() {
               {resolvedOnly ? "← Back to Active" : showResolved ? "HIDE DONE" : "SHOW DONE"}
             </button>
           </div>
-        </div>
+        </div>}
 
         {/* ── Task list / Command Report ── */}
         {showReport ? (
-          <CommandReport analytics={analytics} tasks={tasks} G={G} dyn={dyn} base={base} onTaskClick={(id) => { setShowReport(false); setExpandedId(id); }} />
+          <CommandReport
+            analytics={analytics} tasks={tasks} G={G} dyn={dyn} base={base}
+            onTaskClick={(id) => { setShowReport(false); setExpandedId(id); }}
+            onNavigate={(filters) => {
+              setShowReport(false);
+              if (filters.category) setCatFilter(filters.category);
+              if (filters.priority) setPriorityFilter(filters.priority);
+              if (filters.resolvedOnly) { setResolvedOnly(true); setShowResolved(true); localStorage.setItem("lcc-resolved-only", "true"); localStorage.setItem("lcc-show-resolved", "true"); }
+            }}
+            onClose={() => setShowReport(false)}
+            reportKey={reportKey}
+            setReportKey={setReportKey}
+            copyReportConfirm={copyReportConfirm}
+            setCopyReportConfirm={setCopyReportConfirm}
+          />
         ) : (
         <div style={base.taskList}>
           {loading && <p style={{ color: G.muted, fontSize:"12px", textAlign:"center" }}>Loading…</p>}
@@ -2039,52 +2066,111 @@ export default function TaskTracker() {
 }
 
 // ─── COMMAND REPORT COMPONENT ───────────────────────────────────────────────
-function CommandReport({ analytics, tasks, G, dyn, base, onTaskClick }) {
+function CommandReport({ analytics, tasks, G, dyn, base, onTaskClick, onNavigate, onClose, reportKey, setReportKey, copyReportConfirm, setCopyReportConfirm }) {
   const a = analytics;
   if (!a) return null;
 
-  const fmtDays = (d) => d === null ? "\u2014" : d === 1 ? "1 day" : `${d} days`;
+  const fmtDays = (d) => {
+    if (d === null) return "—";
+    if (d === 0) return "< 1 day";
+    if (d === 1) return "1 day";
+    return `${d} days`;
+  };
 
   return (
-    <div style={{ padding: "20px", display: "flex", flexDirection: "column", gap: "20px" }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
 
       {/* ── Header ── */}
-      <div>
-        <p style={{ fontSize: "9px", letterSpacing: "3px", color: G.accent, textTransform: "uppercase", margin: "0 0 4px" }}>
-          COMMAND REPORT
-        </p>
-        <h2 style={{ fontFamily: G.fontDisplay, fontSize: "20px", fontWeight: 900, color: G.text, margin: 0 }}>
-          Where You Stand
-        </h2>
-        <p style={{ fontSize: "11px", color: G.muted, marginTop: "4px" }}>
-          {new Date().toLocaleDateString("en-US", { weekday:"long", month:"long", day:"numeric", year:"numeric" })}
-        </p>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", padding: "20px 20px 0" }}>
+        <div>
+          <p style={{ fontSize: "9px", letterSpacing: "3px", color: G.accent, textTransform: "uppercase", margin: "0 0 4px" }}>
+            COMMAND REPORT
+          </p>
+          <h2 style={{ fontFamily: G.fontDisplay, fontSize: "20px", fontWeight: 900, color: G.text, margin: 0 }}>
+            Where You Stand
+          </h2>
+          <p style={{ fontSize: "11px", color: G.muted, marginTop: "4px" }}>
+            {new Date().toLocaleDateString("en-US", { weekday:"long", month:"long", day:"numeric", year:"numeric" })}
+          </p>
+        </div>
+        <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+          <button
+            style={{ background: "transparent", border: `1px solid ${G.border}`, borderRadius: "6px", padding: "6px 10px", fontSize: "12px", color: G.muted, cursor: "pointer", fontFamily: G.font }}
+            onClick={() => setReportKey(k => k + 1)}
+            title="Refresh report">
+            ↻
+          </button>
+          <button
+            style={{ background: "transparent", border: `1px solid ${G.border}`, borderRadius: "6px", padding: "6px 10px", fontSize: "12px", color: G.muted, cursor: "pointer", fontFamily: G.font }}
+            onClick={onClose}>
+            ✕
+          </button>
+        </div>
       </div>
 
       {/* ── Top stats ── */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: "10px" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: "10px", padding: "0 20px" }}>
         {[
-          { label: "ACTIVE",    val: a.totalActive,    color: "#ffc107" },
-          { label: "RESOLVED",  val: a.totalResolved,  color: "#00c896" },
-          { label: "THIS WEEK", val: a.thisWeekResolved, color: a.weeklyDelta >= 0 ? "#00c896" : "#ff4444",
-            sub: a.weeklyDelta > 0 ? `\u2191 ${a.weeklyDelta} vs last week` : a.weeklyDelta < 0 ? `\u2193 ${Math.abs(a.weeklyDelta)} vs last week` : "Same as last week" },
-          { label: "AVG RESOLVE TIME", val: fmtDays(a.avgVelocity), color: G.accent, sub: "from create to done" },
+          {
+            label: "ACTIVE", val: a.totalActive, color: "#ffc107", sub: null,
+            onClick: () => onNavigate({}),
+          },
+          {
+            label: "RESOLVED", val: a.totalResolved, color: "#00c896", sub: null,
+            onClick: () => onNavigate({ resolvedOnly: true }),
+          },
+          {
+            label: "THIS WEEK", val: a.thisWeekResolved,
+            color: a.weeklyDelta >= 0 ? "#00c896" : "#ff4444",
+            sub: a.weeklyDelta > 0 ? `↑ ${a.weeklyDelta} vs last week` : a.weeklyDelta < 0 ? `↓ ${Math.abs(a.weeklyDelta)} vs last week` : "Same as last week",
+            onClick: null,
+          },
+          {
+            label: "AVG RESOLVE", val: fmtDays(a.avgVelocity), color: G.accent,
+            sub: "from create to done",
+            onClick: null,
+          },
         ].map(s => (
-          <div key={s.label} style={{ background: G.surface, border: `1px solid ${G.border}`, borderRadius: "10px", padding: "14px" }}>
-            <span style={{ fontFamily: G.fontDisplay, fontSize: "26px", fontWeight: 900, color: s.color, display: "block", lineHeight: 1 }}>
+          <div
+            key={s.label}
+            style={{
+              background: G.surface,
+              border: `1px solid ${G.border}`,
+              borderRadius: "10px",
+              padding: "14px",
+              cursor: s.onClick ? "pointer" : "default",
+              transition: s.onClick ? "opacity 0.15s" : "none",
+            }}
+            onClick={s.onClick || undefined}>
+            <span style={{
+              fontFamily: G.fontDisplay, fontSize: "26px", fontWeight: 900,
+              color: s.color, display: "block", lineHeight: 1,
+              opacity: s.val === 0 || s.val === "—" ? 0.4 : 1,
+            }}>
               {s.val}
             </span>
-            <span style={{ fontSize: "8px", letterSpacing: "1.5px", color: G.muted, display: "block", marginTop: "4px" }}>{s.label}</span>
-            {s.sub && <span style={{ fontSize: "10px", color: s.color, display: "block", marginTop: "2px" }}>{s.sub}</span>}
+            <span style={{ fontSize: "8px", letterSpacing: "1.5px", color: G.muted, display: "block", marginTop: "4px" }}>
+              {s.label}
+            </span>
+            {s.sub && (
+              <span style={{ fontSize: "10px", color: s.color, display: "block", marginTop: "2px" }}>
+                {s.sub}
+              </span>
+            )}
+            {s.onClick && (
+              <span style={{ fontSize: "9px", color: G.muted, display: "block", marginTop: "4px", letterSpacing: "0.5px" }}>
+                tap to view →
+              </span>
+            )}
           </div>
         ))}
       </div>
 
       {/* ── Bottlenecks ── */}
       {a.bottlenecks.length > 0 && (
-        <div style={{ background: G.surface, border: `1px solid #ff444433`, borderRadius: "10px", padding: "16px" }}>
+        <div style={{ background: G.surface, border: `1px solid #ff444433`, borderRadius: "10px", padding: "16px", margin: "0 20px" }}>
           <p style={{ fontSize: "9px", letterSpacing: "2px", color: "#ff4444", margin: "0 0 12px", textTransform: "uppercase" }}>
-            \ud83d\udd12 Critical Path \u2014 Blocking the Most Work
+            CRITICAL PATH — BLOCKING THE MOST WORK
           </p>
           {a.bottlenecks.map(b => (
             <div key={b.task.id}
@@ -2092,7 +2178,7 @@ function CommandReport({ analytics, tasks, G, dyn, base, onTaskClick }) {
               onClick={() => onTaskClick(b.task.id)}>
               <div style={{ flex: 1 }}>
                 <p style={{ fontSize: "13px", fontWeight: 700, color: G.text, margin: "0 0 2px", fontFamily: G.fontDisplay }}>{b.task.title}</p>
-                <p style={{ fontSize: "10px", color: G.muted, margin: 0 }}>{STATUS_MAP[b.task.status]?.label} \u00b7 {b.task.category}</p>
+                <p style={{ fontSize: "10px", color: G.muted, margin: 0 }}>{STATUS_MAP[b.task.status]?.label} · {b.task.category}</p>
               </div>
               <div style={{ textAlign: "center", flexShrink: 0 }}>
                 <span style={{ fontFamily: G.fontDisplay, fontSize: "22px", fontWeight: 900, color: "#ff4444", display: "block", lineHeight: 1 }}>{b.blockingCount}</span>
@@ -2105,9 +2191,9 @@ function CommandReport({ analytics, tasks, G, dyn, base, onTaskClick }) {
 
       {/* ── Stuck HIGH tasks ── */}
       {a.stuckTasks.length > 0 && (
-        <div style={{ background: G.surface, border: `1px solid #ffc10733`, borderRadius: "10px", padding: "16px" }}>
+        <div style={{ background: G.surface, border: `1px solid #ffc10733`, borderRadius: "10px", padding: "16px", margin: "0 20px" }}>
           <p style={{ fontSize: "9px", letterSpacing: "2px", color: "#ffc107", margin: "0 0 12px", textTransform: "uppercase" }}>
-            \u26a0 Stuck \u2014 High Priority, No Movement in 7+ Days
+            STUCK — HIGH PRIORITY, NO MOVEMENT IN 7+ DAYS
           </p>
           {a.stuckTasks.map(t => {
             const lastActivity = t.activity_log?.length
@@ -2120,7 +2206,7 @@ function CommandReport({ analytics, tasks, G, dyn, base, onTaskClick }) {
                 onClick={() => onTaskClick(t.id)}>
                 <div style={{ flex: 1 }}>
                   <p style={{ fontSize:"13px", fontWeight:700, color: G.text, margin:"0 0 2px", fontFamily: G.fontDisplay }}>{t.title}</p>
-                  <p style={{ fontSize:"10px", color: G.muted, margin:0 }}>{STATUS_MAP[t.status]?.label} \u00b7 {t.category}</p>
+                  <p style={{ fontSize:"10px", color: G.muted, margin:0 }}>{STATUS_MAP[t.status]?.label} · {t.category}</p>
                 </div>
                 <div style={{ textAlign:"center", flexShrink:0 }}>
                   <span style={{ fontFamily: G.fontDisplay, fontSize:"20px", fontWeight:900, color:"#ffc107", display:"block", lineHeight:1 }}>{daysSince}d</span>
@@ -2134,9 +2220,9 @@ function CommandReport({ analytics, tasks, G, dyn, base, onTaskClick }) {
 
       {/* ── Overdue aging ── */}
       {a.overdueAging.length > 0 && (
-        <div style={{ background: G.surface, border: `1px solid ${G.border}`, borderRadius: "10px", padding: "16px" }}>
+        <div style={{ background: G.surface, border: `1px solid ${G.border}`, borderRadius: "10px", padding: "16px", margin: "0 20px" }}>
           <p style={{ fontSize: "9px", letterSpacing: "2px", color: "#ff4444", margin: "0 0 12px", textTransform: "uppercase" }}>
-            \ud83d\udcc5 Overdue \u2014 Oldest First
+            OVERDUE — OLDEST FIRST
           </p>
           {a.overdueAging.slice(0, 5).map(t => (
             <div key={t.id}
@@ -2145,7 +2231,7 @@ function CommandReport({ analytics, tasks, G, dyn, base, onTaskClick }) {
               <span style={{ fontFamily: G.fontDisplay, fontSize:"18px", fontWeight:900, color:"#ff4444", flexShrink:0, minWidth:"36px" }}>{t.daysOverdue}d</span>
               <div style={{ flex:1 }}>
                 <p style={{ fontSize:"12px", fontWeight:700, color: G.text, margin:"0 0 2px", fontFamily: G.fontDisplay }}>{t.title}</p>
-                <p style={{ fontSize:"9px", color: G.muted, margin:0 }}>{t.category} \u00b7 {STATUS_MAP[t.status]?.label}</p>
+                <p style={{ fontSize:"9px", color: G.muted, margin:0 }}>{t.category} · {STATUS_MAP[t.status]?.label}</p>
               </div>
             </div>
           ))}
@@ -2153,24 +2239,30 @@ function CommandReport({ analytics, tasks, G, dyn, base, onTaskClick }) {
       )}
 
       {/* ── Weekly trend ── */}
-      <div style={{ background: G.surface, border: `1px solid ${G.border}`, borderRadius: "10px", padding: "16px" }}>
+      <div style={{ background: G.surface, border: `1px solid ${G.border}`, borderRadius: "10px", padding: "16px", margin: "0 20px" }}>
         <p style={{ fontSize: "9px", letterSpacing: "2px", color: G.muted, margin: "0 0 14px", textTransform: "uppercase" }}>
-          Tasks Resolved \u2014 Last 8 Weeks
+          TASKS RESOLVED — LAST 8 WEEKS
         </p>
         {(() => {
           const max = Math.max(...a.weeklyTrend.map(w => w.count), 1);
           return (
-            <div style={{ display: "flex", alignItems: "flex-end", gap: "6px", height: "80px" }}>
+            <div style={{ display: "flex", alignItems: "flex-end", gap: "6px", height: "100px" }}>
               {a.weeklyTrend.map((w, i) => {
-                const isLast = i === a.weeklyTrend.length - 1;
-                const height = Math.max((w.count / max) * 70, w.count > 0 ? 4 : 2);
+                const isCurrentWeek = i === a.weeklyTrend.length - 2;
+                const hasData = w.count > 0;
+                const height = Math.max((w.count / max) * 70, hasData ? 4 : 2);
                 return (
-                  <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: "4px", height: "100%", justifyContent: "flex-end" }}>
-                    <span style={{ fontSize: "8px", color: isLast ? G.accent : G.muted, fontFamily: G.font }}>{w.count}</span>
-                    <div style={{ width: "100%", height: `${height}px`, borderRadius: "3px 3px 0 0", background: isLast ? G.accent : G.border, transition: "height 0.4s ease" }} />
-                    <span style={{ fontSize: "7px", color: G.muted, fontFamily: G.font, textAlign: "center", lineHeight: 1.2, whiteSpace: "nowrap", overflow: "hidden", maxWidth: "100%" }}>
+                  <div key={i}
+                    style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: "4px", height: "100%", justifyContent: "flex-end", cursor: hasData ? "pointer" : "default" }}
+                    onClick={() => { if (hasData) onNavigate({ resolvedOnly: true }); }}>
+                    <span style={{ fontSize: "8px", color: isCurrentWeek ? G.accent : G.muted, fontFamily: G.font }}>{w.count}</span>
+                    <div style={{ width: "100%", height: `${height}px`, borderRadius: "3px 3px 0 0", background: isCurrentWeek ? G.accent : hasData ? `${G.accent}66` : G.border, transition: "height 0.4s ease" }} />
+                    <span style={{ fontSize: "7px", color: isCurrentWeek ? G.accent : G.muted, fontFamily: G.font, textAlign: "center", lineHeight: 1.2, whiteSpace: "nowrap", overflow: "hidden", maxWidth: "100%" }}>
                       {w.label.split(" ")[1]}
                     </span>
+                    {hasData && (
+                      <span style={{ fontSize: "7px", color: G.muted, textAlign: "center" }}>tap</span>
+                    )}
                   </div>
                 );
               })}
@@ -2181,28 +2273,56 @@ function CommandReport({ analytics, tasks, G, dyn, base, onTaskClick }) {
 
       {/* ── Velocity by track ── */}
       {a.velocityByPair.length > 0 && (
-        <div style={{ background: G.surface, border: `1px solid ${G.border}`, borderRadius: "10px", padding: "16px" }}>
+        <div style={{ background: G.surface, border: `1px solid ${G.border}`, borderRadius: "10px", padding: "16px", margin: "0 20px" }}>
           <p style={{ fontSize: "9px", letterSpacing: "2px", color: G.muted, margin: "0 0 12px", textTransform: "uppercase" }}>
             Avg Days to Resolve by Track
           </p>
-          {a.velocityByPair.map(p => (
-            <div key={p.from} style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "8px" }}>
-              <span style={{ fontSize: "10px", color: G.muted, fontFamily: G.font, flex: 1, letterSpacing: "0.5px" }}>{p.label}</span>
-              <span style={{ fontSize: "9px", color: G.muted, fontFamily: G.font }}>({p.count})</span>
-              <span style={{ fontFamily: G.fontDisplay, fontSize: "16px", fontWeight: 900, color: G.accent, minWidth: "50px", textAlign: "right" }}>
-                {fmtDays(p.avg)}
-              </span>
-            </div>
-          ))}
+          {a.velocityByPair.map((p, i) => {
+            const isFastest = a.velocityByPair.length > 1 && i === 0;
+            const isSlowest = a.velocityByPair.length > 1 && i === a.velocityByPair.length - 1;
+            return (
+              <div key={p.from} style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "10px" }}>
+                <div style={{ flex: 1 }}>
+                  <span style={{ fontSize: "10px", color: G.muted, fontFamily: G.font, letterSpacing: "0.5px", display: "block" }}>
+                    {p.label}
+                  </span>
+                  {isFastest && (
+                    <span style={{ fontSize: "8px", color: "#00c896", letterSpacing: "1px" }}>FASTEST</span>
+                  )}
+                  {isSlowest && (
+                    <span style={{ fontSize: "8px", color: "#ffc107", letterSpacing: "1px" }}>MOST TIME</span>
+                  )}
+                </div>
+                <span style={{ fontSize: "9px", color: G.muted, fontFamily: G.font }}>({p.count})</span>
+                <span style={{ fontFamily: G.fontDisplay, fontSize: "16px", fontWeight: 900, color: G.accent, minWidth: "60px", textAlign: "right" }}>
+                  {fmtDays(p.avg)}
+                </span>
+              </div>
+            );
+          })}
+          {a.velocityByPair.length === 1 && (
+            <p style={{ fontSize: "10px", color: G.muted, marginTop: "6px", fontStyle: "italic" }}>
+              Resolve more tasks to see patterns by track.
+            </p>
+          )}
         </div>
       )}
 
       {/* ── Category breakdown ── */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", padding: "0 20px" }}>
         {a.categoryStats.map(c => (
-          <div key={c.category} style={{ background: G.surface, border: `1px solid ${G.border}`, borderRadius: "10px", padding: "14px" }}>
+          <div
+            key={c.category}
+            style={{
+              background: G.surface,
+              border: `1px solid ${G.border}`,
+              borderRadius: "10px",
+              padding: "14px",
+              cursor: "pointer",
+            }}
+            onClick={() => onNavigate({ category: c.category })}>
             <p style={{ fontSize: "9px", letterSpacing: "2px", color: c.category === "Business" ? G.accent : "#ff8c42", margin: "0 0 10px", textTransform: "uppercase" }}>
-              {c.category}
+              {c.category} →
             </p>
             {[
               { label: "Active",   val: c.active,   color: "#ffc107" },
@@ -2220,12 +2340,88 @@ function CommandReport({ analytics, tasks, G, dyn, base, onTaskClick }) {
 
       {/* ── All clear state ── */}
       {a.bottlenecks.length === 0 && a.stuckTasks.length === 0 && a.overdueAging.length === 0 && (
-        <div style={{ textAlign: "center", padding: "20px", background: `${G.accent}0a`, border: `1px solid ${G.accent}33`, borderRadius: "10px" }}>
-          <p style={{ fontSize: "24px", marginBottom: "8px" }}>\u2705</p>
-          <p style={{ fontSize: "13px", color: G.text, fontFamily: G.fontDisplay, fontWeight: 700, margin: "0 0 4px" }}>No Blockers Detected</p>
-          <p style={{ fontSize: "11px", color: G.muted }}>No stuck tasks, no bottlenecks, no overdue items.</p>
+        <div style={{
+          textAlign: "center",
+          padding: "20px 16px",
+          background: `${G.accent}0a`,
+          border: `1px solid ${G.accent}22`,
+          borderRadius: "10px",
+          margin: "0 20px",
+        }}>
+          <div style={{
+            width: "32px", height: "32px", borderRadius: "50%",
+            background: "#00c896", display: "flex",
+            alignItems: "center", justifyContent: "center",
+            margin: "0 auto 10px",
+            fontSize: "16px", color: "#fff",
+          }}>✓</div>
+          <p style={{ fontSize: "13px", color: G.text, fontFamily: G.fontDisplay, fontWeight: 700, margin: "0 0 4px" }}>
+            No Blockers Detected
+          </p>
+          <p style={{ fontSize: "11px", color: G.muted, margin: 0 }}>
+            No stuck tasks, no bottlenecks, no overdue items.
+          </p>
         </div>
       )}
+
+      {/* ── Copy Report button ── */}
+      <div style={{ padding: "0 20px 32px" }}>
+        <button
+          style={{
+            width: "100%", padding: "12px",
+            borderRadius: "8px", background: "transparent",
+            border: `1px solid ${G.border}`,
+            color: G.muted, fontFamily: G.font,
+            fontSize: "10px", letterSpacing: "1.5px",
+            cursor: "pointer", transition: "all 0.2s",
+            display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
+          }}
+          onClick={() => {
+            const lines = [
+              `LIFE COMMAND CENTER — COMMAND REPORT`,
+              `${new Date().toLocaleDateString("en-US", { weekday:"long", month:"long", day:"numeric", year:"numeric" })}`,
+              ``,
+              `OVERVIEW`,
+              `Active: ${a.totalActive} · Resolved: ${a.totalResolved} · This week: ${a.thisWeekResolved} · Avg resolve: ${fmtDays(a.avgVelocity)}`,
+              ``,
+              a.bottlenecks.length > 0 ? [
+                `BOTTLENECKS (${a.bottlenecks.length})`,
+                ...a.bottlenecks.map(b => `  · ${b.task.title} — blocking ${b.blockingCount} task${b.blockingCount !== 1 ? "s" : ""}`),
+                ``,
+              ].join("\n") : "",
+              a.stuckTasks.length > 0 ? [
+                `STUCK — HIGH PRIORITY NO MOVEMENT 7+ DAYS`,
+                ...a.stuckTasks.map(t => {
+                  const lastActivity = t.activity_log?.length
+                    ? new Date(t.activity_log[t.activity_log.length - 1].timestamp)
+                    : new Date(t.created_at);
+                  const days = Math.round((new Date() - lastActivity) / 86400000);
+                  return `  · ${t.title} — ${days} days no movement`;
+                }),
+                ``,
+              ].join("\n") : "",
+              a.overdueAging.length > 0 ? [
+                `OVERDUE`,
+                ...a.overdueAging.map(t => `  · ${t.title} — ${t.daysOverdue}d overdue`),
+                ``,
+              ].join("\n") : "",
+              `CATEGORY BREAKDOWN`,
+              ...a.categoryStats.map(c => `  ${c.category}: ${c.active} active · ${c.resolved} resolved · ${c.overdue} overdue`),
+              ``,
+              a.velocityByPair.length > 0 ? [
+                `VELOCITY BY TRACK`,
+                ...a.velocityByPair.map(p => `  ${p.label}: ${fmtDays(p.avg)} avg (${p.count} resolved)`),
+              ].join("\n") : "",
+            ].filter(Boolean).join("\n");
+
+            navigator.clipboard.writeText(lines).then(() => {
+              setCopyReportConfirm(true);
+              setTimeout(() => setCopyReportConfirm(false), 2500);
+            });
+          }}>
+          {copyReportConfirm ? "✓ COPIED TO CLIPBOARD" : "↓ COPY REPORT AS TEXT"}
+        </button>
+      </div>
 
     </div>
   );
