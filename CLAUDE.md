@@ -1,5 +1,10 @@
 # Life Command Center
 
+## IMPORTANT — File Location
+
+The main application file is `src/App.jsx` — NOT `src/task-tracker.jsx`.
+All prompts and documentation referencing `task-tracker.jsx` apply to `src/App.jsx`.
+
 ## Theme System
 
 The app uses a theme system defined in `src/App.jsx`.

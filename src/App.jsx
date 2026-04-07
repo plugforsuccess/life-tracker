@@ -214,7 +214,9 @@ export default function TaskTracker() {
   const [filter,         setFilter]         = useState("all");
   const [catFilter,      setCatFilter]      = useState("all");
   const [priorityFilter, setPriorityFilter] = useState("all");
-  const [showResolved,   setShowResolved]   = useState(false);
+  const [showResolved,   setShowResolved]   = useState(() => {
+    return localStorage.getItem("lcc-show-resolved") === "true";
+  });
   const [dueFilter,      setDueFilter]      = useState("all");  // all | week | today | overdue
   const [expandedId,     setExpandedId]     = useState(null);
   const [loading,        setLoading]        = useState(true);
@@ -711,7 +713,11 @@ export default function TaskTracker() {
             );
           })}
           <span style={{ width:"1px", background: G.border, flexShrink:0, margin:"0 2px" }} />
-          <button style={dyn.filterBtn(showResolved, "#00c896")} onClick={() => setShowResolved(v => !v)}>
+          <button style={dyn.filterBtn(showResolved, "#00c896")} onClick={() => {
+              const next = !showResolved;
+              setShowResolved(next);
+              localStorage.setItem("lcc-show-resolved", String(next));
+            }}>
             {showResolved ? "HIDE DONE" : "SHOW DONE"}
           </button>
         </div>
