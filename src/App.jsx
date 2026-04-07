@@ -202,6 +202,144 @@ function newChecklistItemId() {
   return `c_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 }
 
+// ─── ANALYTICS ──────────────────────────────────────────────────────────────
+function computeAnalytics(tasks) {
+  const now = new Date();
+  const weekAgo = new Date(now - 7 * 86400000);
+  const twoWeeksAgo = new Date(now - 14 * 86400000);
+
+  const active   = tasks.filter(t => STATUS_MAP[t.status]?.next);
+  const resolved = tasks.filter(t => !STATUS_MAP[t.status]?.next);
+
+  // ── Velocity ──────────────────────────────────────────────────────────────
+  const velocityData = resolved
+    .filter(t => t.resolved_at && t.created_at)
+    .map(t => ({
+      days: Math.round((new Date(t.resolved_at) - new Date(t.created_at)) / 86400000),
+      category: t.category,
+      status: t.status,
+    }));
+
+  const avgVelocity = velocityData.length
+    ? Math.round(velocityData.reduce((s, t) => s + t.days, 0) / velocityData.length)
+    : null;
+
+  const velocityByPair = STATUS_PAIRS.map(pair => {
+    const pairTasks = velocityData.filter(t => t.status === pair.to);
+    return {
+      label: pair.label,
+      from: pair.from,
+      avg: pairTasks.length
+        ? Math.round(pairTasks.reduce((s, t) => s + t.days, 0) / pairTasks.length)
+        : null,
+      count: pairTasks.length,
+    };
+  }).filter(p => p.count > 0);
+
+  // ── Completion rate ────────────────────────────────────────────────────────
+  const thisWeekResolved = resolved.filter(t =>
+    t.resolved_at && new Date(t.resolved_at) >= weekAgo
+  ).length;
+
+  const lastWeekResolved = resolved.filter(t =>
+    t.resolved_at &&
+    new Date(t.resolved_at) >= twoWeeksAgo &&
+    new Date(t.resolved_at) < weekAgo
+  ).length;
+
+  const weeklyDelta = thisWeekResolved - lastWeekResolved;
+
+  // ── Stuck tasks ────────────────────────────────────────────────────────────
+  const stuckTasks = active.filter(t => {
+    if (t.priority !== "high") return false;
+    const lastActivity = t.activity_log?.length
+      ? new Date(t.activity_log[t.activity_log.length - 1].timestamp)
+      : new Date(t.created_at);
+    return (now - lastActivity) / 86400000 >= 7;
+  });
+
+  // ── Bottleneck detection ───────────────────────────────────────────────────
+  const blockerMap = {};
+  active.forEach(t => {
+    (t.blocked_by || []).forEach(bid => {
+      if (!blockerMap[bid]) blockerMap[bid] = [];
+      blockerMap[bid].push(t.id);
+    });
+  });
+
+  const bottlenecks = Object.entries(blockerMap)
+    .map(([blockerId, blockedIds]) => {
+      const blocker = tasks.find(t => t.id === blockerId);
+      return blocker ? { task: blocker, blockingCount: blockedIds.length, blockedIds } : null;
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.blockingCount - a.blockingCount)
+    .slice(0, 3);
+
+  // ── Priority drift ─────────────────────────────────────────────────────────
+  const driftingHigh = active.filter(t => {
+    if (t.priority !== "high") return false;
+    const age = (now - new Date(t.created_at)) / 86400000;
+    return age >= 7;
+  }).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+
+  // ── Category breakdown ─────────────────────────────────────────────────────
+  const categoryStats = ["Business", "Personal"].map(cat => {
+    const catActive   = active.filter(t => t.category === cat);
+    const catResolved = resolved.filter(t => t.category === cat);
+    const catOverdue  = catActive.filter(t =>
+      t.due_date && new Date(t.due_date + "T00:00:00") < now
+    );
+    return {
+      category: cat,
+      active:   catActive.length,
+      resolved: catResolved.length,
+      overdue:  catOverdue.length,
+      total:    catActive.length + catResolved.length,
+    };
+  });
+
+  // ── Overdue aging ──────────────────────────────────────────────────────────
+  const overdueAging = active
+    .filter(t => t.due_date && new Date(t.due_date + "T00:00:00") < now)
+    .map(t => ({
+      ...t,
+      daysOverdue: Math.round((now - new Date(t.due_date + "T00:00:00")) / 86400000),
+    }))
+    .sort((a, b) => b.daysOverdue - a.daysOverdue);
+
+  // ── Weekly trend (last 8 weeks) ────────────────────────────────────────────
+  const weeklyTrend = Array.from({ length: 8 }, (_, i) => {
+    const weekStart = new Date(now - (7 - i) * 7 * 86400000);
+    const weekEnd   = new Date(now - (6 - i) * 7 * 86400000);
+    const count = resolved.filter(t =>
+      t.resolved_at &&
+      new Date(t.resolved_at) >= weekStart &&
+      new Date(t.resolved_at) < weekEnd
+    ).length;
+    return {
+      label: weekStart.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+      count,
+    };
+  });
+
+  return {
+    totalActive:       active.length,
+    totalResolved:     resolved.length,
+    avgVelocity,
+    velocityByPair,
+    thisWeekResolved,
+    lastWeekResolved,
+    weeklyDelta,
+    stuckTasks,
+    bottlenecks,
+    driftingHigh,
+    categoryStats,
+    overdueAging,
+    weeklyTrend,
+  };
+}
+
 // ─── BLANK FORM STATE ─────────────────────────────────────────────────────────
 const BLANK = { title:"", category:"Business", status:"broke", priority:"medium", due_date:"", notes:"", blocked_by:[], checklist:[], log_checklist_items: false };
 
@@ -221,6 +359,7 @@ export default function TaskTracker() {
   const [expandedId,     setExpandedId]     = useState(null);
   const [loading,        setLoading]        = useState(true);
   const [filtersOpen,    setFiltersOpen]    = useState(false);
+  const [showReport,     setShowReport]     = useState(false);
 
   // ─── DESIGN TOKENS (reactive) ──────────────────────────────────────────────
   const G = THEMES[themeKey];
@@ -457,7 +596,11 @@ export default function TaskTracker() {
     const s = STATUS_MAP[task.status];
     if (!s?.next) return;
     const newLog = [...(task.activity_log||[]), logEntry(`Marked ${s.next.toUpperCase()}`)];
-    const patch  = { status: s.next, activity_log: newLog };
+    const patch  = {
+      status: s.next,
+      activity_log: newLog,
+      ...(STATUS_MAP[s.next]?.next === null ? { resolved_at: new Date().toISOString() } : {}),
+    };
     const { error } = await updateTask(task.id, patch);
     if (error) { console.error("Failed to advance task:", error); return; }
     setTasks(ts => ts.map(t => t.id === task.id ? { ...t, ...patch } : t));
@@ -615,6 +758,8 @@ export default function TaskTracker() {
     { key:"due",     label:"DUE→PAID",         color:"#22c55e" },
   ];
 
+  const analytics = showReport ? computeAnalytics(tasks) : null;
+
   const selectedPair = STATUS_PAIRS.find(p => p.from === form.status);
   const otherActiveTasks = activeTasks.filter(t => modalMode === "edit" ? t.id !== editTarget?.id : true);
 
@@ -640,6 +785,22 @@ export default function TaskTracker() {
         <div style={base.header}>
           <p style={base.logo}>LIFE COMMAND CENTER</p>
           <h1 style={base.headline}>STATUS TRACKER</h1>
+          <button
+            onClick={() => setShowReport(v => !v)}
+            style={{
+              position: "absolute",
+              top: "20px",
+              right: "60px",
+              background: showReport ? `${G.accent}22` : "transparent",
+              border: `1px solid ${showReport ? G.accent : G.border}`,
+              borderRadius: "6px",
+              padding: "6px 10px",
+              fontSize: "14px",
+              cursor: "pointer",
+              color: showReport ? G.accent : G.muted,
+            }}>
+            📊
+          </button>
           <button
             onClick={() => setModalMode("theme")}
             style={{
@@ -785,7 +946,10 @@ export default function TaskTracker() {
           </div>
         </div>
 
-        {/* ── Task list ── */}
+        {/* ── Task list / Command Report ── */}
+        {showReport ? (
+          <CommandReport analytics={analytics} tasks={tasks} G={G} dyn={dyn} base={base} onTaskClick={(id) => { setShowReport(false); setExpandedId(id); }} />
+        ) : (
         <div style={base.taskList}>
           {loading && <p style={{ color: G.muted, fontSize:"12px", textAlign:"center" }}>Loading…</p>}
           {!loading && filtered.length === 0 && (
@@ -987,6 +1151,7 @@ export default function TaskTracker() {
             );
           })}
         </div>
+        )}
       </div>
 
       {/* FAB */}
@@ -1373,5 +1538,198 @@ export default function TaskTracker() {
         </div>
       )}
     </>
+  );
+}
+
+// ─── COMMAND REPORT COMPONENT ───────────────────────────────────────────────
+function CommandReport({ analytics, tasks, G, dyn, base, onTaskClick }) {
+  const a = analytics;
+  if (!a) return null;
+
+  const fmtDays = (d) => d === null ? "\u2014" : d === 1 ? "1 day" : `${d} days`;
+
+  return (
+    <div style={{ padding: "20px", display: "flex", flexDirection: "column", gap: "20px" }}>
+
+      {/* ── Header ── */}
+      <div>
+        <p style={{ fontSize: "9px", letterSpacing: "3px", color: G.accent, textTransform: "uppercase", margin: "0 0 4px" }}>
+          COMMAND REPORT
+        </p>
+        <h2 style={{ fontFamily: G.fontDisplay, fontSize: "20px", fontWeight: 900, color: G.text, margin: 0 }}>
+          Where You Stand
+        </h2>
+        <p style={{ fontSize: "11px", color: G.muted, marginTop: "4px" }}>
+          {new Date().toLocaleDateString("en-US", { weekday:"long", month:"long", day:"numeric", year:"numeric" })}
+        </p>
+      </div>
+
+      {/* ── Top stats ── */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: "10px" }}>
+        {[
+          { label: "ACTIVE",    val: a.totalActive,    color: "#ffc107" },
+          { label: "RESOLVED",  val: a.totalResolved,  color: "#00c896" },
+          { label: "THIS WEEK", val: a.thisWeekResolved, color: a.weeklyDelta >= 0 ? "#00c896" : "#ff4444",
+            sub: a.weeklyDelta > 0 ? `\u2191 ${a.weeklyDelta} vs last week` : a.weeklyDelta < 0 ? `\u2193 ${Math.abs(a.weeklyDelta)} vs last week` : "Same as last week" },
+          { label: "AVG RESOLVE TIME", val: fmtDays(a.avgVelocity), color: G.accent, sub: "from create to done" },
+        ].map(s => (
+          <div key={s.label} style={{ background: G.surface, border: `1px solid ${G.border}`, borderRadius: "10px", padding: "14px" }}>
+            <span style={{ fontFamily: G.fontDisplay, fontSize: "26px", fontWeight: 900, color: s.color, display: "block", lineHeight: 1 }}>
+              {s.val}
+            </span>
+            <span style={{ fontSize: "8px", letterSpacing: "1.5px", color: G.muted, display: "block", marginTop: "4px" }}>{s.label}</span>
+            {s.sub && <span style={{ fontSize: "10px", color: s.color, display: "block", marginTop: "2px" }}>{s.sub}</span>}
+          </div>
+        ))}
+      </div>
+
+      {/* ── Bottlenecks ── */}
+      {a.bottlenecks.length > 0 && (
+        <div style={{ background: G.surface, border: `1px solid #ff444433`, borderRadius: "10px", padding: "16px" }}>
+          <p style={{ fontSize: "9px", letterSpacing: "2px", color: "#ff4444", margin: "0 0 12px", textTransform: "uppercase" }}>
+            \ud83d\udd12 Critical Path \u2014 Blocking the Most Work
+          </p>
+          {a.bottlenecks.map(b => (
+            <div key={b.task.id}
+              style={{ display: "flex", alignItems: "center", gap: "12px", padding: "10px 12px", borderRadius: "8px", background: "#ff44440a", border: "1px solid #ff444422", marginBottom: "6px", cursor: "pointer" }}
+              onClick={() => onTaskClick(b.task.id)}>
+              <div style={{ flex: 1 }}>
+                <p style={{ fontSize: "13px", fontWeight: 700, color: G.text, margin: "0 0 2px", fontFamily: G.fontDisplay }}>{b.task.title}</p>
+                <p style={{ fontSize: "10px", color: G.muted, margin: 0 }}>{STATUS_MAP[b.task.status]?.label} \u00b7 {b.task.category}</p>
+              </div>
+              <div style={{ textAlign: "center", flexShrink: 0 }}>
+                <span style={{ fontFamily: G.fontDisplay, fontSize: "22px", fontWeight: 900, color: "#ff4444", display: "block", lineHeight: 1 }}>{b.blockingCount}</span>
+                <span style={{ fontSize: "8px", color: "#ff4444", letterSpacing: "1px" }}>BLOCKING</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── Stuck HIGH tasks ── */}
+      {a.stuckTasks.length > 0 && (
+        <div style={{ background: G.surface, border: `1px solid #ffc10733`, borderRadius: "10px", padding: "16px" }}>
+          <p style={{ fontSize: "9px", letterSpacing: "2px", color: "#ffc107", margin: "0 0 12px", textTransform: "uppercase" }}>
+            \u26a0 Stuck \u2014 High Priority, No Movement in 7+ Days
+          </p>
+          {a.stuckTasks.map(t => {
+            const lastActivity = t.activity_log?.length
+              ? new Date(t.activity_log[t.activity_log.length - 1].timestamp)
+              : new Date(t.created_at);
+            const daysSince = Math.round((new Date() - lastActivity) / 86400000);
+            return (
+              <div key={t.id}
+                style={{ display:"flex", alignItems:"center", gap:"10px", padding:"10px 12px", borderRadius:"8px", background:"#ffc1070a", border:"1px solid #ffc10722", marginBottom:"6px", cursor:"pointer" }}
+                onClick={() => onTaskClick(t.id)}>
+                <div style={{ flex: 1 }}>
+                  <p style={{ fontSize:"13px", fontWeight:700, color: G.text, margin:"0 0 2px", fontFamily: G.fontDisplay }}>{t.title}</p>
+                  <p style={{ fontSize:"10px", color: G.muted, margin:0 }}>{STATUS_MAP[t.status]?.label} \u00b7 {t.category}</p>
+                </div>
+                <div style={{ textAlign:"center", flexShrink:0 }}>
+                  <span style={{ fontFamily: G.fontDisplay, fontSize:"20px", fontWeight:900, color:"#ffc107", display:"block", lineHeight:1 }}>{daysSince}d</span>
+                  <span style={{ fontSize:"8px", color:"#ffc107", letterSpacing:"1px" }}>NO MOVE</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── Overdue aging ── */}
+      {a.overdueAging.length > 0 && (
+        <div style={{ background: G.surface, border: `1px solid ${G.border}`, borderRadius: "10px", padding: "16px" }}>
+          <p style={{ fontSize: "9px", letterSpacing: "2px", color: "#ff4444", margin: "0 0 12px", textTransform: "uppercase" }}>
+            \ud83d\udcc5 Overdue \u2014 Oldest First
+          </p>
+          {a.overdueAging.slice(0, 5).map(t => (
+            <div key={t.id}
+              style={{ display:"flex", alignItems:"center", gap:"10px", padding:"8px 10px", borderRadius:"6px", border:`1px solid ${G.border}`, marginBottom:"5px", cursor:"pointer" }}
+              onClick={() => onTaskClick(t.id)}>
+              <span style={{ fontFamily: G.fontDisplay, fontSize:"18px", fontWeight:900, color:"#ff4444", flexShrink:0, minWidth:"36px" }}>{t.daysOverdue}d</span>
+              <div style={{ flex:1 }}>
+                <p style={{ fontSize:"12px", fontWeight:700, color: G.text, margin:"0 0 2px", fontFamily: G.fontDisplay }}>{t.title}</p>
+                <p style={{ fontSize:"9px", color: G.muted, margin:0 }}>{t.category} \u00b7 {STATUS_MAP[t.status]?.label}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── Weekly trend ── */}
+      <div style={{ background: G.surface, border: `1px solid ${G.border}`, borderRadius: "10px", padding: "16px" }}>
+        <p style={{ fontSize: "9px", letterSpacing: "2px", color: G.muted, margin: "0 0 14px", textTransform: "uppercase" }}>
+          Tasks Resolved \u2014 Last 8 Weeks
+        </p>
+        {(() => {
+          const max = Math.max(...a.weeklyTrend.map(w => w.count), 1);
+          return (
+            <div style={{ display: "flex", alignItems: "flex-end", gap: "6px", height: "80px" }}>
+              {a.weeklyTrend.map((w, i) => {
+                const isLast = i === a.weeklyTrend.length - 1;
+                const height = Math.max((w.count / max) * 70, w.count > 0 ? 4 : 2);
+                return (
+                  <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: "4px", height: "100%", justifyContent: "flex-end" }}>
+                    <span style={{ fontSize: "8px", color: isLast ? G.accent : G.muted, fontFamily: G.font }}>{w.count}</span>
+                    <div style={{ width: "100%", height: `${height}px`, borderRadius: "3px 3px 0 0", background: isLast ? G.accent : G.border, transition: "height 0.4s ease" }} />
+                    <span style={{ fontSize: "7px", color: G.muted, fontFamily: G.font, textAlign: "center", lineHeight: 1.2, whiteSpace: "nowrap", overflow: "hidden", maxWidth: "100%" }}>
+                      {w.label.split(" ")[1]}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })()}
+      </div>
+
+      {/* ── Velocity by track ── */}
+      {a.velocityByPair.length > 0 && (
+        <div style={{ background: G.surface, border: `1px solid ${G.border}`, borderRadius: "10px", padding: "16px" }}>
+          <p style={{ fontSize: "9px", letterSpacing: "2px", color: G.muted, margin: "0 0 12px", textTransform: "uppercase" }}>
+            Avg Days to Resolve by Track
+          </p>
+          {a.velocityByPair.map(p => (
+            <div key={p.from} style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "8px" }}>
+              <span style={{ fontSize: "10px", color: G.muted, fontFamily: G.font, flex: 1, letterSpacing: "0.5px" }}>{p.label}</span>
+              <span style={{ fontSize: "9px", color: G.muted, fontFamily: G.font }}>({p.count})</span>
+              <span style={{ fontFamily: G.fontDisplay, fontSize: "16px", fontWeight: 900, color: G.accent, minWidth: "50px", textAlign: "right" }}>
+                {fmtDays(p.avg)}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── Category breakdown ── */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+        {a.categoryStats.map(c => (
+          <div key={c.category} style={{ background: G.surface, border: `1px solid ${G.border}`, borderRadius: "10px", padding: "14px" }}>
+            <p style={{ fontSize: "9px", letterSpacing: "2px", color: c.category === "Business" ? G.accent : "#ff8c42", margin: "0 0 10px", textTransform: "uppercase" }}>
+              {c.category}
+            </p>
+            {[
+              { label: "Active",   val: c.active,   color: "#ffc107" },
+              { label: "Resolved", val: c.resolved, color: "#00c896" },
+              { label: "Overdue",  val: c.overdue,  color: c.overdue > 0 ? "#ff4444" : G.muted },
+            ].map(s => (
+              <div key={s.label} style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
+                <span style={{ fontSize: "10px", color: G.muted }}>{s.label}</span>
+                <span style={{ fontSize: "10px", color: s.color, fontFamily: G.font, fontWeight: 700 }}>{s.val}</span>
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+
+      {/* ── All clear state ── */}
+      {a.bottlenecks.length === 0 && a.stuckTasks.length === 0 && a.overdueAging.length === 0 && (
+        <div style={{ textAlign: "center", padding: "20px", background: `${G.accent}0a`, border: `1px solid ${G.accent}33`, borderRadius: "10px" }}>
+          <p style={{ fontSize: "24px", marginBottom: "8px" }}>\u2705</p>
+          <p style={{ fontSize: "13px", color: G.text, fontFamily: G.fontDisplay, fontWeight: 700, margin: "0 0 4px" }}>No Blockers Detected</p>
+          <p style={{ fontSize: "11px", color: G.muted }}>No stuck tasks, no bottlenecks, no overdue items.</p>
+        </div>
+      )}
+
+    </div>
   );
 }

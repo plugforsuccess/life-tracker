@@ -37,3 +37,12 @@ Located at the top of `src/App.jsx` (outside the component), the `THEMES` object
 - `base` and `dyn` style objects are defined inside the component so they re-derive on every render when the theme changes
 - Status colors (`#ff4444`, `#ffc107`, etc.) and priority colors are NOT themeable — they stay hardcoded
 - The localStorage key is `"lcc-theme"` (stores the theme key string, e.g., `"midnight"`)
+
+## Command Report
+
+- `computeAnalytics(tasks)` is a pure function defined outside the component — takes the full tasks array, returns the analytics object
+- `CommandReport` is a function component defined after `TaskTracker` in `src/App.jsx`
+- `showReport` boolean state controls visibility — when true, hides task list and shows report
+- `resolved_at` timestamptz column added to tasks — set in `handleAdvance()` when advancing to a terminal status
+- No new Supabase tables required — all analytics computed client-side from existing data
+- Premium gating not yet implemented — full feature available to all users in v1
