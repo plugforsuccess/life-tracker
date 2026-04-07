@@ -1,5 +1,56 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { supabase } from "./lib/supabase";
+
+// ─── ERROR BOUNDARY ─────────────────────────────────────────────────────────
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error, info) {
+    console.error("App error:", error, info);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{
+          minHeight: "100vh", background: "#0a0a0f",
+          display: "flex", flexDirection: "column",
+          alignItems: "center", justifyContent: "center",
+          padding: "20px", fontFamily: "'DM Mono','Courier New',monospace",
+          textAlign: "center",
+        }}>
+          <p style={{ fontSize: "32px", marginBottom: "16px" }}>⚠️</p>
+          <p style={{ fontSize: "12px", letterSpacing: "2px", color: "#e8e8f0", marginBottom: "8px" }}>
+            SOMETHING WENT WRONG
+          </p>
+          <p style={{ fontSize: "11px", color: "#5a5a7a", marginBottom: "24px", lineHeight: 1.5 }}>
+            An unexpected error occurred.<br />Your data is safe.
+          </p>
+          <button
+            onClick={() => window.location.reload()}
+            style={{
+              padding: "10px 20px", borderRadius: "6px",
+              background: "transparent", border: "1px solid #7c6af7",
+              color: "#7c6af7", fontFamily: "'DM Mono','Courier New',monospace",
+              fontSize: "10px", letterSpacing: "2px", cursor: "pointer",
+            }}>
+            RELOAD APP
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+export { ErrorBoundary };
 
 // ─── SUPABASE DATA LAYER ─────────────────────────────────────────────────────
 
@@ -32,22 +83,16 @@ const deleteTask = async (id) => {
     .eq("id", id);
 };
 
-// ─── AI AUTO-FILL (via Supabase Edge Function) ──────────────────────────────
+// ─── AI AUTO-FILL (via serverless function) ─────────────────────────────────
 async function aiAutoFill(prompt) {
-  const res = await fetch(
-    `${supabase.functionsUrl}/ai-autofill`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${supabase.supabaseKey}`,
-      },
-      body: JSON.stringify({ prompt }),
-    }
-  );
+  const res = await fetch("/api/autofill", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ prompt }),
+  });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || `AI request failed (${res.status})`);
+    throw new Error(err.error || "Request failed");
   }
   return await res.json();
 }
@@ -210,6 +255,13 @@ export default function TaskTracker() {
   const [themeKey, setThemeKey] = useState(() => {
     return localStorage.getItem("lcc-theme") || "midnight";
   });
+  // ─── Auth state ──
+  const [user, setUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [authEmail, setAuthEmail] = useState("");
+  const [authSent, setAuthSent] = useState(false);
+  const [authError, setAuthError] = useState("");
+
   const [tasks,          setTasks]          = useState([]);
   const [filter,         setFilter]         = useState("all");
   const [catFilter,      setCatFilter]      = useState("all");
@@ -303,7 +355,24 @@ export default function TaskTracker() {
   const [newChecklistItem, setNewChecklistItem] = useState("");
   const [newLogChecklistItems, setNewLogChecklistItems] = useState(false);
 
+  // ─── Auth lifecycle ──
   useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+      setAuthLoading(false);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+      if (session?.user) loadTasks();
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // ─── Load tasks when user is authenticated ──
+  useEffect(() => {
+    if (!user) return;
     loadTasks();
 
     const channel = supabase
@@ -316,7 +385,7 @@ export default function TaskTracker() {
       });
 
     return () => supabase.removeChannel(channel);
-  }, []);
+  }, [user]);
 
   async function loadTasks() {
     setLoading(true);
@@ -324,6 +393,24 @@ export default function TaskTracker() {
     if (error) console.error("Failed to load tasks:", error);
     setTasks(data || []);
     setLoading(false);
+  }
+
+  // ── Magic link auth ──
+  async function handleSendMagicLink() {
+    if (!authEmail.trim()) {
+      setAuthError("Please enter your email address.");
+      return;
+    }
+    setAuthError("");
+    const { error } = await supabase.auth.signInWithOtp({
+      email: authEmail.trim(),
+      options: { emailRedirectTo: window.location.origin },
+    });
+    if (error) {
+      setAuthError("Something went wrong. Please try again.");
+      return;
+    }
+    setAuthSent(true);
   }
 
   // ── Field helpers ──
@@ -404,6 +491,7 @@ export default function TaskTracker() {
         checklist:   newChecklist,
         log_checklist_items: newLogChecklistItems,
         activity_log:[logEntry("Task created")],
+        user_id:     user.id,
       };
       const { data, error } = await addTask(payload);
       if (error) { setFormError(error.message || "Failed to add task."); setSaving(false); return; }
@@ -618,6 +706,69 @@ export default function TaskTracker() {
   const selectedPair = STATUS_PAIRS.find(p => p.from === form.status);
   const otherActiveTasks = activeTasks.filter(t => modalMode === "edit" ? t.id !== editTarget?.id : true);
 
+  // ─── AUTH SCREENS ──────────────────────────────────────────────────────────
+  if (authLoading) {
+    return (
+      <div style={{ minHeight:"100vh", background: G.bg, display:"flex", alignItems:"center", justifyContent:"center", fontFamily: G.font }}>
+        <p style={{ color: G.muted, fontSize:"11px", letterSpacing:"3px" }}>LOADING…</p>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div style={{ minHeight:"100vh", background: G.bg, display:"flex", alignItems:"center", justifyContent:"center", padding:"20px", fontFamily: G.font }}>
+        <div style={{ width:"100%", maxWidth:"360px" }}>
+          <p style={{ fontSize:"10px", letterSpacing:"4px", color: G.accent, margin:"0 0 8px", textTransform:"uppercase" }}>Life Command Center</p>
+          <h1 style={{ fontFamily: G.fontDisplay, fontSize:"24px", fontWeight:900, color: G.text, margin:"0 0 32px", letterSpacing:"-0.5px" }}>
+            STATUS TRACKER
+          </h1>
+
+          {!authSent ? (
+            <>
+              <label style={{ display:"block", fontSize:"9px", letterSpacing:"2px", color: G.muted, marginBottom:"8px", textTransform:"uppercase" }}>
+                Email address
+              </label>
+              <input
+                type="email"
+                style={{ width:"100%", background: G.surface, border:`1px solid ${G.border}`, borderRadius:"6px", padding:"12px", color: G.text, fontFamily: G.font, fontSize:"14px", marginBottom:"12px", boxSizing:"border-box", outline:"none" }}
+                placeholder="you@example.com"
+                value={authEmail}
+                onChange={e => setAuthEmail(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter") handleSendMagicLink(); }}
+              />
+              {authError && (
+                <p style={{ fontSize:"10px", color:"#ff4444", margin:"-4px 0 12px", letterSpacing:"0.5px" }}>{authError}</p>
+              )}
+              <button
+                style={{ width:"100%", padding:"13px", borderRadius:"8px", background: G.accent, border:"none", color:"#fff", fontFamily: G.fontDisplay, fontSize:"12px", letterSpacing:"2px", fontWeight:700, cursor:"pointer" }}
+                onClick={handleSendMagicLink}>
+                SEND MAGIC LINK
+              </button>
+              <p style={{ fontSize:"10px", color: G.muted, textAlign:"center", marginTop:"16px", lineHeight:1.5 }}>
+                We'll email you a link to sign in.<br />No password needed.
+              </p>
+            </>
+          ) : (
+            <div style={{ textAlign:"center" }}>
+              <div style={{ fontSize:"32px", marginBottom:"16px" }}>📬</div>
+              <p style={{ fontSize:"13px", color: G.text, marginBottom:"8px" }}>Check your email</p>
+              <p style={{ fontSize:"11px", color: G.muted, lineHeight:1.6 }}>
+                We sent a magic link to<br />
+                <span style={{ color: G.accent }}>{authEmail}</span>
+              </p>
+              <button
+                style={{ marginTop:"24px", padding:"8px 16px", borderRadius:"6px", background:"transparent", border:`1px solid ${G.border}`, color: G.muted, fontFamily: G.font, fontSize:"10px", cursor:"pointer" }}
+                onClick={() => { setAuthSent(false); setAuthEmail(""); setAuthError(""); }}>
+                Use a different email
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   // ─── RENDER ────────────────────────────────────────────────────────────────
   return (
     <>
@@ -638,6 +789,11 @@ export default function TaskTracker() {
 
         {/* ── Header ── */}
         <div style={base.header}>
+          <button
+            onClick={() => supabase.auth.signOut()}
+            style={{ position:"absolute", top:"20px", left:"20px", background:"transparent", border:`1px solid ${G.border}`, borderRadius:"6px", padding:"5px 10px", fontSize:"9px", letterSpacing:"1.5px", color: G.muted, cursor:"pointer", fontFamily: G.font }}>
+            SIGN OUT
+          </button>
           <p style={base.logo}>LIFE COMMAND CENTER</p>
           <h1 style={base.headline}>STATUS TRACKER</h1>
           <button
