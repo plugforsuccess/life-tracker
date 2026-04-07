@@ -49,6 +49,19 @@ Located at the top of `src/App.jsx` (outside the component), the `THEMES` object
 - Blocker section is collapsed by default in the modal — expands on tap
 - Cross-category blockers are hidden by default — shown via toggle
 
+## Checklist Feature
+
+**Drag-to-reorder:**
+
+- `reorderChecklist(list, fromIndex, toIndex)` — pure helper, no side effects
+- `updateChecklistOrder(taskId, newChecklist)` — calls `updateTask` and `setTasks`
+- `dragState` — component-level state `{ taskId, fromIndex, overIndex, touchY? }`
+- `modalDragState` — separate state for modal checklist drag `{ fromIndex, overIndex }`
+- Uses HTML5 Drag and Drop API for desktop + touch events for iOS Safari
+- `data-checklist-item={task.id}` attribute on each card checklist item enables touch position detection
+- Drag handle is hidden on resolved tasks — checklist is read-only when task is resolved
+- Main task list does NOT have drag-to-reorder — sort is computed
+
 ## Command Report
 
 - `computeAnalytics(tasks)` is a pure function defined outside the component — takes the full tasks array, returns the analytics object

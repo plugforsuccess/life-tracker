@@ -216,6 +216,36 @@ function newChecklistItemId() {
   return `c_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 }
 
+function reorderChecklist(list, fromIndex, toIndex) {
+  if (fromIndex === toIndex) return list;
+  const result = [...list];
+  const [moved] = result.splice(fromIndex, 1);
+  result.splice(toIndex, 0, moved);
+  return result;
+}
+
+function DragHandle({ style }) {
+  return (
+    <div style={{
+      display: "flex",
+      flexDirection: "column",
+      gap: "3px",
+      padding: "4px 6px",
+      cursor: "grab",
+      flexShrink: 0,
+      opacity: 0.35,
+      ...style,
+    }}>
+      {[0, 1, 2].map(i => (
+        <div key={i} style={{ display: "flex", gap: "3px" }}>
+          <div style={{ width: "3px", height: "3px", borderRadius: "50%", background: "currentColor" }} />
+          <div style={{ width: "3px", height: "3px", borderRadius: "50%", background: "currentColor" }} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ─── ANALYTICS ──────────────────────────────────────────────────────────────
 function computeAnalytics(tasks) {
   const now = new Date();
@@ -467,6 +497,11 @@ export default function TaskTracker() {
   const [newChecklistItem, setNewChecklistItem] = useState("");
   const [newLogChecklistItems, setNewLogChecklistItems] = useState(false);
 
+  // Drag-to-reorder state
+  const [dragState, setDragState] = useState(null);
+  const [modalDragState, setModalDragState] = useState(null);
+  function clearDrag() { setDragState(null); }
+
   useEffect(() => {
     loadTasks();
 
@@ -523,6 +558,7 @@ export default function TaskTracker() {
   function openAdd() {
     setForm(BLANK); setAiPrompt(""); setAiError(""); setFormError(""); setSaving(false);
     setNewChecklist([]); setNewChecklistItem(""); setNewLogChecklistItems(false);
+    setModalDragState(null);
     setModalMode("add");
   }
   function openEdit(task, e) {
@@ -557,6 +593,7 @@ export default function TaskTracker() {
     setLogNoteError(""); setCopyConfirm(false); setLogSearch("");
     setNewChecklist([]); setNewChecklistItem(""); setNewLogChecklistItems(false);
     setBlockerSectionOpen(false); setBlockerSearch(""); setShowCrossCategory(false);
+    setModalDragState(null);
   }
 
   // ── AI auto-fill ──
@@ -754,6 +791,14 @@ export default function TaskTracker() {
     setTasks(ts => ts.map(t => t.id === taskId ? { ...t, checklist: updated } : t));
   };
 
+  const updateChecklistOrder = async (taskId, newChecklist) => {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+    if (!STATUS_MAP[task.status]?.next) return;
+    await updateTask(taskId, { checklist: newChecklist });
+    setTasks(ts => ts.map(t => t.id === taskId ? { ...t, checklist: newChecklist } : t));
+  };
+
   // ── Stats ──
   const activeTasks   = tasks.filter(t => STATUS_MAP[t.status]?.next);
   const resolvedTasks = tasks.filter(t => !STATUS_MAP[t.status]?.next);
@@ -897,49 +942,59 @@ export default function TaskTracker() {
         <div style={base.header}>
           <p style={base.logo}>LIFE COMMAND CENTER</p>
           <h1 style={base.headline}>STATUS TRACKER</h1>
-          <button
-            onClick={() => {
-              setShowReport(v => {
-                if (!v) setReportKey(k => k + 1);
-                return !v;
-              });
-            }}
-            style={{
-              position: "absolute",
-              top: "20px",
-              right: "60px",
-              background: showReport ? `${G.accent}22` : "transparent",
-              border: `1px solid ${showReport ? G.accent : G.border}`,
-              borderRadius: "6px",
-              padding: "5px 10px",
-              fontSize: "10px",
-              letterSpacing: "1.5px",
-              fontFamily: G.font,
-              cursor: "pointer",
-              color: showReport ? G.accent : G.muted,
-              display: "flex",
-              alignItems: "center",
-              gap: "5px",
-            }}>
-            <span style={{ fontSize: "13px" }}>📊</span>
-            <span>REPORT</span>
-          </button>
-          <button
-            onClick={() => setModalMode("theme")}
-            style={{
-              position: "absolute",
-              top: "20px",
-              right: "20px",
-              background: "transparent",
-              border: `1px solid ${G.border}`,
-              borderRadius: "6px",
-              padding: "6px 10px",
-              fontSize: "16px",
-              cursor: "pointer",
-              color: G.text,
-            }}>
-            🎨
-          </button>
+          {/* Header right-side controls — single container, both buttons inside */}
+          <div style={{
+            position: "absolute",
+            top: "18px",
+            right: "14px",
+            display: "flex",
+            flexDirection: "row",
+            alignItems: "center",
+            gap: "6px",
+          }}>
+            {/* Report button */}
+            <button
+              onClick={() => {
+                setShowReport(v => {
+                  if (!v) setReportKey(k => k + 1);
+                  return !v;
+                });
+              }}
+              style={{
+                background: showReport ? `${G.accent}22` : "transparent",
+                border: `1px solid ${showReport ? G.accent : G.border}`,
+                borderRadius: "6px",
+                padding: "5px 10px",
+                fontSize: "10px",
+                letterSpacing: "1.5px",
+                fontFamily: G.font,
+                cursor: "pointer",
+                color: showReport ? G.accent : G.muted,
+                display: "flex",
+                alignItems: "center",
+                gap: "5px",
+                whiteSpace: "nowrap",
+              }}>
+              <span style={{ fontSize: "13px" }}>📊</span>
+              <span>REPORT</span>
+            </button>
+
+            {/* Theme button */}
+            <button
+              onClick={() => setModalMode("theme")}
+              style={{
+                background: "transparent",
+                border: `1px solid ${G.border}`,
+                borderRadius: "6px",
+                padding: "6px 10px",
+                fontSize: "16px",
+                cursor: "pointer",
+                color: G.text,
+                flexShrink: 0,
+              }}>
+              🎨
+            </button>
+          </div>
         </div>
 
         {/* ── Stats ── */}
@@ -1334,45 +1389,126 @@ export default function TaskTracker() {
                             </div>
                           );
                         })()}
-                        <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                          {task.checklist.map(item => (
-                            <div key={item.id}
-                              style={{
-                                display: "flex", alignItems: "center", gap: "10px",
-                                padding: "8px 10px", borderRadius: "6px",
-                                background: item.done ? `${G.accent}0a` : "transparent",
-                                border: `1px solid ${item.done ? G.accent + "33" : G.border}`,
-                                cursor: isResolved ? "default" : "pointer",
-                                transition: "all 0.15s",
-                              }}
-                              onClick={() => !isResolved && toggleChecklistItem(task.id, item.id)}>
-                              <div style={{
-                                width: "16px", height: "16px", borderRadius: "4px", flexShrink: 0,
-                                border: `1.5px solid ${item.done ? G.accent : G.muted}`,
-                                background: item.done ? G.accent : "transparent",
-                                display: "flex", alignItems: "center", justifyContent: "center",
-                                transition: "all 0.15s",
-                              }}>
-                                {item.done && <span style={{ color: "#fff", fontSize: "10px", lineHeight: 1 }}>✓</span>}
+                        <div style={{ display: "flex", flexDirection: "column", gap: "4px", touchAction: dragState?.taskId === task.id ? "none" : "auto" }}>
+                          {task.checklist.map((item, index) => {
+                            const isDragging  = dragState?.taskId === task.id && dragState?.fromIndex === index;
+                            const isDragOver  = dragState?.taskId === task.id && dragState?.overIndex === index;
+
+                            return (
+                              <div
+                                key={item.id}
+                                data-checklist-item={task.id}
+                                draggable={!isResolved}
+                                onDragStart={e => {
+                                  e.dataTransfer.effectAllowed = "move";
+                                  setDragState({ taskId: task.id, fromIndex: index, overIndex: index });
+                                }}
+                                onDragEnter={e => {
+                                  e.preventDefault();
+                                  if (dragState?.taskId === task.id) {
+                                    setDragState(s => ({ ...s, overIndex: index }));
+                                  }
+                                }}
+                                onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}
+                                onDragEnd={async () => {
+                                  if (dragState?.taskId === task.id && dragState.fromIndex !== dragState.overIndex && dragState.overIndex !== null) {
+                                    const newList = reorderChecklist(task.checklist, dragState.fromIndex, dragState.overIndex);
+                                    await updateChecklistOrder(task.id, newList);
+                                  }
+                                  clearDrag();
+                                }}
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: "8px",
+                                  padding: "8px 10px",
+                                  borderRadius: "6px",
+                                  background: isDragOver && !isDragging
+                                    ? `${G.accent}18`
+                                    : item.done ? `${G.accent}0a` : "transparent",
+                                  border: `1px solid ${
+                                    isDragOver && !isDragging ? G.accent
+                                    : isDragging ? `${G.accent}44`
+                                    : item.done ? `${G.accent}33`
+                                    : G.border
+                                  }`,
+                                  opacity: isDragging ? 0.4 : 1,
+                                  transition: "background 0.1s, border-color 0.1s, opacity 0.15s",
+                                  cursor: "default",
+                                }}>
+
+                                {/* Drag handle — hidden on resolved tasks */}
+                                {!isResolved && (
+                                  <div
+                                    onTouchStart={e => {
+                                      const touch = e.touches[0];
+                                      setDragState({ taskId: task.id, fromIndex: index, overIndex: index, touchY: touch.clientY });
+                                    }}
+                                    onTouchMove={e => {
+                                      if (!dragState || dragState.taskId !== task.id) return;
+                                      e.preventDefault();
+                                      const touch = e.touches[0];
+                                      const elements = document.querySelectorAll(`[data-checklist-item="${task.id}"]`);
+                                      let closestIndex = index;
+                                      let closestDistance = Infinity;
+                                      elements.forEach((el, i) => {
+                                        const rect = el.getBoundingClientRect();
+                                        const centerY = rect.top + rect.height / 2;
+                                        const distance = Math.abs(touch.clientY - centerY);
+                                        if (distance < closestDistance) {
+                                          closestDistance = distance;
+                                          closestIndex = i;
+                                        }
+                                      });
+                                      setDragState(s => ({ ...s, overIndex: closestIndex }));
+                                    }}
+                                    onTouchEnd={async () => {
+                                      if (dragState?.taskId === task.id && dragState.fromIndex !== dragState.overIndex && dragState.overIndex !== null) {
+                                        const newList = reorderChecklist(task.checklist, dragState.fromIndex, dragState.overIndex);
+                                        await updateChecklistOrder(task.id, newList);
+                                      }
+                                      clearDrag();
+                                    }}
+                                  >
+                                    <DragHandle style={{ color: G.muted }} />
+                                  </div>
+                                )}
+
+                                {/* Checkbox */}
+                                <div
+                                  style={{
+                                    width: "16px", height: "16px", borderRadius: "4px", flexShrink: 0,
+                                    border: `1.5px solid ${item.done ? G.accent : G.muted}`,
+                                    background: item.done ? G.accent : "transparent",
+                                    display: "flex", alignItems: "center", justifyContent: "center",
+                                    transition: "all 0.15s", cursor: "pointer",
+                                  }}
+                                  onClick={e => { e.stopPropagation(); toggleChecklistItem(task.id, item.id); }}>
+                                  {item.done && <span style={{ color: "#fff", fontSize: "10px", lineHeight: 1 }}>✓</span>}
+                                </div>
+
+                                {/* Item text */}
+                                <span style={{
+                                  fontSize: "12px",
+                                  color: item.done ? G.muted : G.text,
+                                  flex: 1,
+                                  textDecoration: item.done ? "line-through" : "none",
+                                  transition: "all 0.15s",
+                                }}>
+                                  {item.text}
+                                </span>
+
+                                {/* Delete button */}
+                                {!isResolved && (
+                                  <button
+                                    style={{ background: "transparent", border: "none", color: G.muted, fontSize: "12px", cursor: "pointer", padding: "0 2px", flexShrink: 0 }}
+                                    onClick={e => { e.stopPropagation(); deleteChecklistItem(task.id, item.id); }}>
+                                    ✕
+                                  </button>
+                                )}
                               </div>
-                              <span style={{
-                                fontSize: "12px",
-                                color: item.done ? G.muted : G.text,
-                                flex: 1,
-                                textDecoration: item.done ? "line-through" : "none",
-                                transition: "all 0.15s",
-                              }}>
-                                {item.text}
-                              </span>
-                              {!isResolved && (
-                                <button
-                                  style={{ background: "transparent", border: "none", color: G.muted, fontSize: "12px", cursor: "pointer", padding: "0 2px", flexShrink: 0 }}
-                                  onClick={e => { e.stopPropagation(); deleteChecklistItem(task.id, item.id); }}>
-                                  ✕
-                                </button>
-                              )}
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       </div>
                     )}
@@ -1493,21 +1629,89 @@ export default function TaskTracker() {
             <label style={base.label}>Checklist (optional)</label>
 
             {newChecklist.length > 0 && (
-              <div style={{ display: "flex", flexDirection: "column", gap: "4px", marginBottom: "8px" }}>
-                {newChecklist.map((item, idx) => (
-                  <div key={item.id} style={{
-                    display: "flex", alignItems: "center", gap: "8px",
-                    padding: "8px 10px", borderRadius: "6px",
-                    background: G.bg, border: `1px solid ${G.border}`,
-                  }}>
-                    <span style={{ fontSize: "11px", color: G.text, flex: 1 }}>{item.text}</span>
-                    <button
-                      style={{ background: "transparent", border: "none", color: G.muted, fontSize: "11px", cursor: "pointer", padding: "0 2px" }}
-                      onClick={() => setNewChecklist(prev => prev.filter(i => i.id !== item.id))}>
-                      ✕
-                    </button>
-                  </div>
-                ))}
+              <div style={{ display: "flex", flexDirection: "column", gap: "4px", marginBottom: "8px", touchAction: modalDragState ? "none" : "auto" }}>
+                {newChecklist.map((item, index) => {
+                  const isDragging = modalDragState?.fromIndex === index;
+                  const isDragOver = modalDragState?.overIndex === index;
+
+                  return (
+                    <div
+                      key={item.id}
+                      data-modal-checklist-item="modal"
+                      draggable
+                      onDragStart={e => {
+                        e.dataTransfer.effectAllowed = "move";
+                        setModalDragState({ fromIndex: index, overIndex: index });
+                      }}
+                      onDragEnter={e => {
+                        e.preventDefault();
+                        setModalDragState(s => s ? ({ ...s, overIndex: index }) : s);
+                      }}
+                      onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}
+                      onDragEnd={() => {
+                        if (modalDragState && modalDragState.fromIndex !== modalDragState.overIndex && modalDragState.overIndex !== null) {
+                          setNewChecklist(prev => reorderChecklist(prev, modalDragState.fromIndex, modalDragState.overIndex));
+                        }
+                        setModalDragState(null);
+                      }}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "8px",
+                        padding: "8px 10px",
+                        borderRadius: "6px",
+                        background: isDragOver && !isDragging ? `${G.accent}18` : G.bg,
+                        border: `1px solid ${isDragOver && !isDragging ? G.accent : isDragging ? `${G.accent}44` : G.border}`,
+                        opacity: isDragging ? 0.4 : 1,
+                        transition: "background 0.1s, border-color 0.1s",
+                      }}>
+
+                      {/* Drag handle */}
+                      <div
+                        onTouchStart={e => {
+                          const touch = e.touches[0];
+                          setModalDragState({ fromIndex: index, overIndex: index, touchY: touch.clientY });
+                        }}
+                        onTouchMove={e => {
+                          if (!modalDragState) return;
+                          e.preventDefault();
+                          const touch = e.touches[0];
+                          const elements = document.querySelectorAll('[data-modal-checklist-item="modal"]');
+                          let closestIndex = index;
+                          let closestDistance = Infinity;
+                          elements.forEach((el, i) => {
+                            const rect = el.getBoundingClientRect();
+                            const centerY = rect.top + rect.height / 2;
+                            const distance = Math.abs(touch.clientY - centerY);
+                            if (distance < closestDistance) {
+                              closestDistance = distance;
+                              closestIndex = i;
+                            }
+                          });
+                          setModalDragState(s => ({ ...s, overIndex: closestIndex }));
+                        }}
+                        onTouchEnd={() => {
+                          if (modalDragState && modalDragState.fromIndex !== modalDragState.overIndex && modalDragState.overIndex !== null) {
+                            setNewChecklist(prev => reorderChecklist(prev, modalDragState.fromIndex, modalDragState.overIndex));
+                          }
+                          setModalDragState(null);
+                        }}
+                      >
+                        <DragHandle style={{ color: G.muted }} />
+                      </div>
+
+                      {/* Item text */}
+                      <span style={{ fontSize: "11px", color: G.text, flex: 1 }}>{item.text}</span>
+
+                      {/* Remove button */}
+                      <button
+                        style={{ background: "transparent", border: "none", color: G.muted, fontSize: "11px", cursor: "pointer", padding: "0 2px" }}
+                        onClick={() => setNewChecklist(prev => prev.filter(i => i.id !== item.id))}>
+                        ✕
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             )}
 
