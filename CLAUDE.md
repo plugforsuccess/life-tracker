@@ -38,6 +38,17 @@ Located at the top of `src/App.jsx` (outside the component), the `THEMES` object
 - Status colors (`#ff4444`, `#ffc107`, etc.) and priority colors are NOT themeable — they stay hardcoded
 - The localStorage key is `"lcc-theme"` (stores the theme key string, e.g., `"midnight"`)
 
+## Data Model
+
+### `blocked_by` field
+
+- `blocked_by` is `jsonb` in Supabase (changed from `uuid[]`)
+- Each entry shape: `{ id: string, reason: string }` — reason may be empty string
+- Backward compatibility: existing string UUID entries handled via `typeof entry === "string"` fallback everywhere `blocked_by` is read
+- `BLOCKER_COMPATIBILITY` constant defines which status tracks can block which others — located near `STATUS_PAIRS`
+- Blocker section is collapsed by default in the modal — expands on tap
+- Cross-category blockers are hidden by default — shown via toggle
+
 ## Command Report
 
 - `computeAnalytics(tasks)` is a pure function defined outside the component — takes the full tasks array, returns the analytics object

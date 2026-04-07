@@ -84,6 +84,20 @@ const STATUS_PAIRS = [
   { from: "due",     to: "paid",     label: "DUE → PAID",         desc: "Bill, invoice, rent, or payment that needs to be made or collected" },
 ];
 
+// Which status tracks can logically block which other tracks.
+// Key = the new task's status (what's being created/edited).
+// Value = array of status keys whose tasks can appear as blocker candidates.
+const BLOCKER_COMPATIBILITY = {
+  broke:   ["open", "pending", "draft", "idea", "lost"],
+  open:    ["pending", "draft", "open", "lost"],
+  lost:    ["open", "pending", "draft"],
+  dirty:   ["open", "pending", "broke"],
+  pending: ["pending", "open", "draft", "lost"],
+  draft:   ["pending", "open", "broke", "lost"],
+  idea:    ["open", "pending", "draft", "broke"],
+  due:     ["pending", "open"],  // payments rarely block anything else
+};
+
 const PRIORITIES = [
   { key: "high",   label: "HIGH", color: "#ff4444", icon: "🔥" },
   { key: "medium", label: "MED",  color: "#ffc107", icon: "⚡" },
@@ -261,7 +275,8 @@ function computeAnalytics(tasks) {
   // ── Bottleneck detection ───────────────────────────────────────────────────
   const blockerMap = {};
   active.forEach(t => {
-    (t.blocked_by || []).forEach(bid => {
+    (t.blocked_by || []).forEach(entry => {
+      const bid = typeof entry === "string" ? entry : entry.id;
       if (!blockerMap[bid]) blockerMap[bid] = [];
       blockerMap[bid].push(t.id);
     });
@@ -437,6 +452,11 @@ export default function TaskTracker() {
   const [aiLoading,setAiLoading] = useState(false);
   const [aiError,  setAiError]   = useState("");
 
+  // Blocker section state
+  const [blockerSectionOpen, setBlockerSectionOpen] = useState(false);
+  const [blockerSearch,      setBlockerSearch]      = useState("");
+  const [showCrossCategory,  setShowCrossCategory]  = useState(false);
+
   // Checklist form state
   const [newChecklist,    setNewChecklist]    = useState([]);
   const [newChecklistItem, setNewChecklistItem] = useState("");
@@ -467,8 +487,31 @@ export default function TaskTracker() {
 
   // ── Field helpers ──
   const setF = (key, val) => setForm(f => ({ ...f, [key]: val }));
-  function toggleBlockedBy(id) {
-    setForm(f => ({ ...f, blocked_by: f.blocked_by.includes(id) ? f.blocked_by.filter(x => x !== id) : [...f.blocked_by, id] }));
+  function toggleBlockedBy(taskId) {
+    setForm(f => {
+      const existing = (f.blocked_by || []).find(e => {
+        const id = typeof e === "string" ? e : e.id;
+        return id === taskId;
+      });
+      if (existing) {
+        return { ...f, blocked_by: f.blocked_by.filter(e => {
+          const id = typeof e === "string" ? e : e.id;
+          return id !== taskId;
+        })};
+      } else {
+        return { ...f, blocked_by: [...(f.blocked_by || []), { id: taskId, reason: "" }] };
+      }
+    });
+  }
+
+  function updateBlockerReason(taskId, reason) {
+    setForm(f => ({
+      ...f,
+      blocked_by: (f.blocked_by || []).map(e => {
+        const id = typeof e === "string" ? e : e.id;
+        return id === taskId ? { id: taskId, reason } : e;
+      }),
+    }));
   }
 
   // ── Open modals ──
@@ -491,6 +534,9 @@ export default function TaskTracker() {
     });
     setNewChecklist(task.checklist || []);
     setNewLogChecklistItems(task.log_checklist_items || false);
+    setBlockerSectionOpen((task.blocked_by || []).length > 0);
+    setBlockerSearch("");
+    setShowCrossCategory(false);
     setModalMode("edit");
   }
   function openLog(task, e) {
@@ -505,6 +551,7 @@ export default function TaskTracker() {
     setFormError(""); setSaving(false);
     setLogNoteError(""); setCopyConfirm(false); setLogSearch("");
     setNewChecklist([]); setNewChecklistItem(""); setNewLogChecklistItems(false);
+    setBlockerSectionOpen(false); setBlockerSearch(""); setShowCrossCategory(false);
   }
 
   // ── AI auto-fill ──
@@ -761,7 +808,50 @@ export default function TaskTracker() {
   const analytics = showReport ? computeAnalytics(tasks) : null;
 
   const selectedPair = STATUS_PAIRS.find(p => p.from === form.status);
-  const otherActiveTasks = activeTasks.filter(t => modalMode === "edit" ? t.id !== editTarget?.id : true);
+
+  // Compute filtered blocker candidates
+  const blockerCandidates = (() => {
+    // All active tasks excluding the task being edited
+    const pool = activeTasks.filter(t =>
+      modalMode === "edit" ? t.id !== editTarget?.id : true
+    );
+
+    // Get compatible tracks for the current status selection
+    const compatibleStatuses = BLOCKER_COMPATIBILITY[form.status] || [];
+
+    // Filter to compatible tracks only
+    const compatible = pool.filter(t => compatibleStatuses.includes(t.status));
+
+    // Apply search filter
+    const searched = blockerSearch.trim()
+      ? compatible.filter(t =>
+          t.title.toLowerCase().includes(blockerSearch.toLowerCase())
+        )
+      : compatible;
+
+    // Split into same-category and cross-category
+    const sameCategory  = searched.filter(t => t.category === form.category);
+    const crossCategory = searched.filter(t => t.category !== form.category);
+
+    return { sameCategory, crossCategory, total: searched.length };
+  })();
+
+  // Helper to check if a task is currently selected as a blocker
+  function isBlockerSelected(taskId) {
+    return (form.blocked_by || []).some(e => {
+      const id = typeof e === "string" ? e : e.id;
+      return id === taskId;
+    });
+  }
+
+  // Helper to get the reason for a selected blocker
+  function getBlockerReason(taskId) {
+    const entry = (form.blocked_by || []).find(e => {
+      const id = typeof e === "string" ? e : e.id;
+      return id === taskId;
+    });
+    return entry ? (typeof entry === "string" ? "" : entry.reason || "") : "";
+  }
 
   // ─── RENDER ────────────────────────────────────────────────────────────────
   return (
@@ -966,7 +1056,7 @@ export default function TaskTracker() {
             const expanded  = expandedId === task.id;
             const isResolved= !s.next;
             const dueInfo   = dueDateLabel(task.due_date);
-            const blockers  = (task.blocked_by||[]).map(bid => tasks.find(t => t.id===bid)).filter(bt => bt && STATUS_MAP[bt.status]?.next);
+            const blockers  = (task.blocked_by||[]).map(entry => { const id = typeof entry === "string" ? entry : entry.id; return tasks.find(t => t.id===id); }).filter(bt => bt && STATUS_MAP[bt.status]?.next);
             const isBlocked = blockers.length > 0;
             const logCount  = (task.activity_log||[]).length;
             const isOverdue = dueInfo && dueInfo.color === "#ff4444" && !isResolved;
@@ -1043,7 +1133,23 @@ export default function TaskTracker() {
                     {isBlocked && (
                       <div style={{ marginTop:"10px", padding:"8px 10px", background:"#ff444411", borderRadius:"6px", border:"1px solid #ff444433" }}>
                         <p style={{ fontSize:"9px", color:"#ff4444", letterSpacing:"1px", margin:"0 0 6px" }}>BLOCKED BY:</p>
-                        {blockers.map(bt => <p key={bt.id} style={{ fontSize:"11px", color: G.muted, margin:"2px 0" }}>→ {bt.title}</p>)}
+                        {blockers.map(bt => {
+                          const entry = (task.blocked_by || []).find(e => {
+                            const id = typeof e === "string" ? e : e.id;
+                            return id === bt.id;
+                          });
+                          const reason = entry && typeof entry !== "string" ? entry.reason : "";
+                          return (
+                            <div key={bt.id} style={{ marginBottom: "4px" }}>
+                              <p style={{ fontSize:"11px", color: G.muted, margin: 0 }}>→ {bt.title}</p>
+                              {reason && (
+                                <p style={{ fontSize:"10px", color:"#ff444488", margin:"2px 0 0 10px", fontStyle:"italic" }}>
+                                  {reason}
+                                </p>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
 
@@ -1337,25 +1443,287 @@ export default function TaskTracker() {
               </div>
             )}
 
-            {/* Blocked by */}
-            {otherActiveTasks.length > 0 && (
-              <>
-                <label style={base.label}>Blocked By (optional)</label>
-                <div style={{ display:"flex", flexDirection:"column", gap:"6px", marginBottom:"16px" }}>
-                  {otherActiveTasks.map(t => {
-                    const sel = form.blocked_by.includes(t.id);
-                    return (
-                      <div key={t.id}
-                        style={{ display:"flex", alignItems:"center", gap:"8px", padding:"8px 10px", borderRadius:"6px", cursor:"pointer", border:`1px solid ${sel ? G.accent : G.border}`, background: sel ? G.accentGlow : "transparent", transition:"all 0.15s" }}
-                        onClick={() => toggleBlockedBy(t.id)}>
-                        <span style={{ fontSize:"11px", color: sel ? G.accent : G.muted, flex:1 }}>{t.title}</span>
-                        <span style={{ fontSize:"9px", color: G.muted }}>{STATUS_MAP[t.status]?.label}</span>
-                      </div>
-                    );
-                  })}
+            {/* ── BLOCKED BY ── */}
+            <div style={{ marginBottom: "16px" }}>
+
+              {/* Collapsed trigger */}
+              {!blockerSectionOpen ? (
+                <button
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    padding: "10px 14px",
+                    width: "100%",
+                    borderRadius: "8px",
+                    background: "transparent",
+                    border: `1px dashed ${G.border}`,
+                    color: G.muted,
+                    fontFamily: G.font,
+                    fontSize: "11px",
+                    letterSpacing: "1px",
+                    cursor: "pointer",
+                    textAlign: "left",
+                    transition: "all 0.2s",
+                  }}
+                  onClick={() => setBlockerSectionOpen(true)}>
+                  <span style={{ fontSize: "14px" }}>🔒</span>
+                  <span>Add blocker (optional)</span>
+                  {(form.blocked_by || []).length > 0 && (
+                    <span style={{
+                      marginLeft: "auto",
+                      background: `${G.accent}22`,
+                      color: G.accent,
+                      fontSize: "9px",
+                      letterSpacing: "1px",
+                      padding: "2px 8px",
+                      borderRadius: "3px",
+                      border: `1px solid ${G.accent}44`,
+                    }}>
+                      {(form.blocked_by || []).length} SELECTED
+                    </span>
+                  )}
+                </button>
+              ) : (
+
+                /* Expanded section */
+                <div style={{ background: G.bg, border: `1px solid ${G.border}`, borderRadius: "10px", padding: "14px" }}>
+
+                  {/* Section header */}
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+                    <div>
+                      <p style={{ fontSize: "9px", letterSpacing: "2px", color: G.muted, margin: "0 0 2px", textTransform: "uppercase" }}>
+                        Blocked By
+                      </p>
+                      <p style={{ fontSize: "10px", color: G.muted, margin: 0, lineHeight: 1.4 }}>
+                        {blockerCandidates.total === 0
+                          ? "No compatible tasks found"
+                          : `${blockerCandidates.total} compatible task${blockerCandidates.total !== 1 ? "s" : ""} — tap to select`}
+                      </p>
+                    </div>
+                    <button
+                      style={{ background: "transparent", border: "none", color: G.muted, fontSize: "16px", cursor: "pointer", padding: "4px 8px" }}
+                      onClick={() => setBlockerSectionOpen(false)}>
+                      ✕
+                    </button>
+                  </div>
+
+                  {/* Search — only shown when 4+ candidates */}
+                  {blockerCandidates.total >= 4 && (
+                    <input
+                      style={{ ...base.input, marginBottom: "10px", fontSize: "12px" }}
+                      placeholder="Search tasks…"
+                      value={blockerSearch}
+                      onChange={e => setBlockerSearch(e.target.value)}
+                    />
+                  )}
+
+                  {/* No compatible tasks */}
+                  {blockerCandidates.total === 0 && (
+                    <p style={{ fontSize: "11px", color: G.muted, textAlign: "center", padding: "12px 0" }}>
+                      No active {form.category} tasks can logically block a{" "}
+                      {STATUS_PAIRS.find(p => p.from === form.status)?.label || form.status} task.
+                    </p>
+                  )}
+
+                  {/* Same-category tasks */}
+                  {blockerCandidates.sameCategory.length > 0 && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                      {blockerCandidates.sameCategory.map(t => {
+                        const selected = isBlockerSelected(t.id);
+                        const reason   = getBlockerReason(t.id);
+                        const s        = STATUS_MAP[t.status];
+                        return (
+                          <div key={t.id}>
+                            {/* Task row */}
+                            <div
+                              style={{
+                                display: "flex", alignItems: "center", gap: "10px",
+                                padding: "10px 12px",
+                                borderRadius: selected ? "8px 8px 0 0" : "8px",
+                                cursor: "pointer",
+                                border: `1px solid ${selected ? G.accent : G.border}`,
+                                borderLeft: `3px solid ${selected ? G.accent : s?.color || G.border}`,
+                                background: selected ? G.accentGlow : G.surface,
+                                transition: "all 0.15s",
+                              }}
+                              onClick={() => toggleBlockedBy(t.id)}>
+                              {/* Checkbox */}
+                              <div style={{
+                                width: "18px", height: "18px", borderRadius: "4px", flexShrink: 0,
+                                border: `1.5px solid ${selected ? G.accent : G.muted}`,
+                                background: selected ? G.accent : "transparent",
+                                display: "flex", alignItems: "center", justifyContent: "center",
+                                transition: "all 0.15s",
+                              }}>
+                                {selected && <span style={{ color: "#fff", fontSize: "11px", lineHeight: 1 }}>✓</span>}
+                              </div>
+                              {/* Title */}
+                              <span style={{ fontSize: "12px", color: selected ? G.text : G.muted, flex: 1, lineHeight: 1.3 }}>
+                                {t.title}
+                              </span>
+                              {/* Status badge */}
+                              <span style={{
+                                fontSize: "9px", letterSpacing: "1px",
+                                color: s?.color || G.muted,
+                                border: `1px solid ${s?.color || G.muted}`,
+                                padding: "1px 6px", borderRadius: "3px",
+                                flexShrink: 0,
+                              }}>
+                                {s?.label}
+                              </span>
+                            </div>
+
+                            {/* Reason field — shown only when selected */}
+                            {selected && (
+                              <div style={{
+                                borderLeft: `3px solid ${G.accent}`,
+                                borderRight: `1px solid ${G.accent}`,
+                                borderBottom: `1px solid ${G.accent}`,
+                                borderRadius: "0 0 8px 8px",
+                                padding: "8px 12px",
+                                background: `${G.accent}08`,
+                              }}>
+                                <input
+                                  style={{
+                                    width: "100%", background: "transparent",
+                                    border: "none", borderBottom: `1px solid ${G.border}`,
+                                    color: G.text, fontFamily: G.font,
+                                    fontSize: "11px", padding: "4px 0",
+                                    outline: "none", boxSizing: "border-box",
+                                  }}
+                                  placeholder="Why is this blocking? (optional)"
+                                  maxLength={80}
+                                  value={reason}
+                                  onChange={e => updateBlockerReason(t.id, e.target.value)}
+                                  onClick={e => e.stopPropagation()}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Cross-category toggle */}
+                  {blockerCandidates.crossCategory.length > 0 && (
+                    <div style={{ marginTop: "10px" }}>
+                      <button
+                        style={{
+                          background: "transparent", border: "none",
+                          color: G.muted, fontFamily: G.font,
+                          fontSize: "10px", letterSpacing: "1px",
+                          cursor: "pointer", padding: "6px 0",
+                          display: "flex", alignItems: "center", gap: "6px",
+                        }}
+                        onClick={() => setShowCrossCategory(v => !v)}>
+                        <span style={{ fontSize: "10px" }}>{showCrossCategory ? "▾" : "▸"}</span>
+                        {showCrossCategory ? "Hide" : "Show"} {blockerCandidates.crossCategory.length} cross-category task{blockerCandidates.crossCategory.length !== 1 ? "s" : ""}
+                      </button>
+
+                      {showCrossCategory && (
+                        <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginTop: "6px" }}>
+                          {blockerCandidates.crossCategory.map(t => {
+                            const selected = isBlockerSelected(t.id);
+                            const reason   = getBlockerReason(t.id);
+                            const s        = STATUS_MAP[t.status];
+                            return (
+                              <div key={t.id}>
+                                <div
+                                  style={{
+                                    display: "flex", alignItems: "center", gap: "10px",
+                                    padding: "10px 12px",
+                                    borderRadius: selected ? "8px 8px 0 0" : "8px",
+                                    cursor: "pointer",
+                                    border: `1px solid ${selected ? G.accent : G.border}`,
+                                    borderLeft: `3px solid ${selected ? G.accent : s?.color || G.border}`,
+                                    background: selected ? G.accentGlow : G.surface,
+                                    opacity: 0.8,
+                                    transition: "all 0.15s",
+                                  }}
+                                  onClick={() => toggleBlockedBy(t.id)}>
+                                  <div style={{
+                                    width: "18px", height: "18px", borderRadius: "4px", flexShrink: 0,
+                                    border: `1.5px solid ${selected ? G.accent : G.muted}`,
+                                    background: selected ? G.accent : "transparent",
+                                    display: "flex", alignItems: "center", justifyContent: "center",
+                                    transition: "all 0.15s",
+                                  }}>
+                                    {selected && <span style={{ color: "#fff", fontSize: "11px", lineHeight: 1 }}>✓</span>}
+                                  </div>
+                                  <div style={{ flex: 1 }}>
+                                    <span style={{ fontSize: "12px", color: selected ? G.text : G.muted, display: "block", lineHeight: 1.3 }}>
+                                      {t.title}
+                                    </span>
+                                    <span style={{ fontSize: "9px", color: G.muted, letterSpacing: "0.5px" }}>
+                                      {t.category}
+                                    </span>
+                                  </div>
+                                  <span style={{
+                                    fontSize: "9px", letterSpacing: "1px",
+                                    color: s?.color || G.muted,
+                                    border: `1px solid ${s?.color || G.muted}`,
+                                    padding: "1px 6px", borderRadius: "3px", flexShrink: 0,
+                                  }}>
+                                    {s?.label}
+                                  </span>
+                                </div>
+                                {selected && (
+                                  <div style={{
+                                    borderLeft: `3px solid ${G.accent}`,
+                                    borderRight: `1px solid ${G.accent}`,
+                                    borderBottom: `1px solid ${G.accent}`,
+                                    borderRadius: "0 0 8px 8px",
+                                    padding: "8px 12px",
+                                    background: `${G.accent}08`,
+                                  }}>
+                                    <input
+                                      style={{
+                                        width: "100%", background: "transparent",
+                                        border: "none", borderBottom: `1px solid ${G.border}`,
+                                        color: G.text, fontFamily: G.font,
+                                        fontSize: "11px", padding: "4px 0",
+                                        outline: "none", boxSizing: "border-box",
+                                      }}
+                                      placeholder="Why is this blocking? (optional)"
+                                      maxLength={80}
+                                      value={reason}
+                                      onChange={e => updateBlockerReason(t.id, e.target.value)}
+                                      onClick={e => e.stopPropagation()}
+                                    />
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Selected count summary */}
+                  {(form.blocked_by || []).length > 0 && (
+                    <div style={{
+                      marginTop: "12px", padding: "8px 12px",
+                      background: `${G.accent}11`,
+                      border: `1px solid ${G.accent}33`,
+                      borderRadius: "6px",
+                      display: "flex", justifyContent: "space-between", alignItems: "center",
+                    }}>
+                      <span style={{ fontSize: "11px", color: G.accent }}>
+                        🔒 {(form.blocked_by || []).length} blocker{(form.blocked_by || []).length !== 1 ? "s" : ""} selected
+                      </span>
+                      <button
+                        style={{ background: "transparent", border: "none", color: G.muted, fontSize: "10px", fontFamily: G.font, cursor: "pointer", letterSpacing: "0.5px" }}
+                        onClick={() => setForm(f => ({ ...f, blocked_by: [] }))}>
+                        Clear all
+                      </button>
+                    </div>
+                  )}
                 </div>
-              </>
-            )}
+              )}
+            </div>
 
             {formError && <p style={{ fontSize:"11px", color:"#ff4444", margin:"0 0 8px", lineHeight:1.4 }}>{formError}</p>}
             <div style={base.modalBtns}>
