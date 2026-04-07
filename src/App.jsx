@@ -371,6 +371,9 @@ export default function TaskTracker() {
     return localStorage.getItem("lcc-show-resolved") === "true";
   });
   const [dueFilter,      setDueFilter]      = useState("all");  // all | week | today | overdue
+  const [resolvedOnly,   setResolvedOnly]   = useState(() =>
+    localStorage.getItem("lcc-resolved-only") === "true"
+  );
   const [expandedId,     setExpandedId]     = useState(null);
   const [loading,        setLoading]        = useState(true);
   const [filtersOpen,    setFiltersOpen]    = useState(false);
@@ -762,7 +765,13 @@ export default function TaskTracker() {
   const filtered = tasks
     .filter(t => {
       const isResolved = !STATUS_MAP[t.status]?.next;
+
+      // resolvedOnly mode — show ONLY resolved tasks
+      if (resolvedOnly) return isResolved;
+
+      // Normal mode — hide resolved unless showResolved is true
       if (!showResolved && isResolved) return false;
+
       const pairMatch = filter === "all" || t.status === filter || STATUS_PAIRS.find(p => p.from === filter && t.status === p.to);
       if (!pairMatch) return false;
       // Resolved tasks bypass category/priority/due filters so "SHOW DONE" always reveals them
@@ -770,15 +779,26 @@ export default function TaskTracker() {
       const catMatch  = catFilter === "all" || t.category === catFilter;
       const priMatch  = priorityFilter === "all" || t.priority === priorityFilter;
       let dueMatch = true;
-      if (dueFilter === "today")   dueMatch = t.due_date === todayStr;
-      if (dueFilter === "week")    dueMatch = t.due_date && t.due_date <= weekStr;
-      if (dueFilter === "overdue") dueMatch = t.due_date && t.due_date < todayStr;
+      if (dueFilter === "today")   dueMatch = t.due_date === todayStr && !!STATUS_MAP[t.status]?.next;
+      if (dueFilter === "week")    dueMatch = t.due_date && t.due_date <= weekStr && !!STATUS_MAP[t.status]?.next;
+      if (dueFilter === "overdue") dueMatch = t.due_date && t.due_date < todayStr && !!STATUS_MAP[t.status]?.next;
       return catMatch && priMatch && dueMatch;
     })
     .sort((a, b) => {
       const resolved_a = !STATUS_MAP[a.status]?.next;
       const resolved_b = !STATUS_MAP[b.status]?.next;
+
+      // In resolvedOnly mode, sort resolved tasks by resolved_at descending (most recent first)
+      if (resolvedOnly) {
+        const dateA = a.resolved_at ? new Date(a.resolved_at) : new Date(a.created_at);
+        const dateB = b.resolved_at ? new Date(b.resolved_at) : new Date(b.created_at);
+        return dateB - dateA;
+      }
+
+      // Normal mode — resolved tasks sink to the bottom
       if (resolved_a !== resolved_b) return resolved_a ? 1 : -1;
+
+      // Within active tasks — high priority first, then by due date
       const po = { high:0, medium:1, low:2 };
       if (po[a.priority] !== po[b.priority]) return po[a.priority] - po[b.priority];
       if (a.due_date && b.due_date) return new Date(a.due_date) - new Date(b.due_date);
@@ -916,21 +936,84 @@ export default function TaskTracker() {
           const doneItems = tasksWithChecklists.reduce((sum, t) => sum + t.checklist.filter(i => i.done).length, 0);
           const showChecklist = totalItems > 0;
           const stats = [
-            { label:"ACTIVE",   val: activeTasks.length, color:"#ffc107", action: () => { setFilter("all"); setDueFilter("all"); setPriorityFilter("all"); if (showResolved) { setShowResolved(false); localStorage.setItem("lcc-show-resolved","false"); } } },
-            { label:"DONE",     val: resolvedTasks.length, color:"#00c896", action: () => { setFilter("all"); if (!showResolved) { setShowResolved(true); localStorage.setItem("lcc-show-resolved","true"); } } },
-            { label:"HIGH",     val: highCount,          color:"#ff4444", action: () => { setPriorityFilter(priorityFilter === "high" ? "all" : "high"); } },
-            { label:"OVERDUE",  val: overdueCount,       color: overdueCount > 0 ? "#ff4444" : G.muted, action: () => { setDueFilter(dueFilter === "overdue" ? "all" : "overdue"); } },
+            {
+              label: "ACTIVE",
+              val: activeTasks.length,
+              color: "#ffc107",
+              active: !resolvedOnly && priorityFilter === "all" && dueFilter === "all",
+              onClick: () => {
+                setResolvedOnly(false);
+                setShowResolved(false);
+                setPriorityFilter("all");
+                setDueFilter("all");
+                localStorage.setItem("lcc-resolved-only", "false");
+                localStorage.setItem("lcc-show-resolved", "false");
+                localStorage.setItem("lcc-priority-filter", "all");
+                localStorage.setItem("lcc-due-filter", "all");
+              },
+            },
+            {
+              label: "DONE",
+              val: resolvedTasks.length,
+              color: "#00c896",
+              active: resolvedOnly,
+              onClick: () => {
+                setResolvedOnly(true);
+                setShowResolved(true);
+                localStorage.setItem("lcc-resolved-only", "true");
+                localStorage.setItem("lcc-show-resolved", "true");
+              },
+            },
+            {
+              label: "🔥 HIGH",
+              val: highCount,
+              color: "#ff4444",
+              active: !resolvedOnly && priorityFilter === "high",
+              onClick: () => {
+                setResolvedOnly(false);
+                setShowResolved(false);
+                setPriorityFilter("high");
+                setDueFilter("all");
+                localStorage.setItem("lcc-resolved-only", "false");
+                localStorage.setItem("lcc-show-resolved", "false");
+                localStorage.setItem("lcc-priority-filter", "high");
+                localStorage.setItem("lcc-due-filter", "all");
+              },
+            },
+            {
+              label: "OVERDUE",
+              val: overdueCount,
+              color: overdueCount > 0 ? "#ff4444" : G.muted,
+              active: !resolvedOnly && dueFilter === "overdue",
+              onClick: () => {
+                setResolvedOnly(false);
+                setShowResolved(false);
+                setDueFilter("overdue");
+                setPriorityFilter("all");
+                localStorage.setItem("lcc-resolved-only", "false");
+                localStorage.setItem("lcc-show-resolved", "false");
+                localStorage.setItem("lcc-due-filter", "overdue");
+                localStorage.setItem("lcc-priority-filter", "all");
+              },
+            },
           ];
           return (
             <div style={{ ...base.statsRow, gridTemplateColumns: showChecklist ? "repeat(5,1fr)" : "repeat(4,1fr)" }}>
               {stats.map(st => (
-                <div key={st.label} className="lcc-stat" onClick={st.action} style={{
+                <div key={st.label} className="lcc-stat" onClick={st.onClick} style={{
                   ...base.statBox,
                   cursor: "pointer",
-                  transition: "all 0.15s",
+                  border: `1px solid ${st.active ? st.color + "66" : G.border}`,
+                  background: st.active ? `${st.color}0f` : G.surface,
+                  transition: "all 0.2s",
                 }}>
-                  <span style={dyn.statNum(st.color)}>{st.val}</span>
-                  <span style={{ fontSize:"8px", letterSpacing:"1px", color: G.muted, display:"block", marginTop:"2px" }}>{st.label}</span>
+                  <span style={{ ...dyn.statNum(st.color), opacity: st.val === 0 ? 0.4 : 1 }}>{st.val}</span>
+                  <span style={{
+                    fontSize: "8px", letterSpacing: "1px",
+                    color: st.active ? st.color : G.muted,
+                    display: "block", marginTop: "2px",
+                    fontWeight: st.active ? 700 : 400,
+                  }}>{st.label}</span>
                 </div>
               ))}
               {showChecklist && (
@@ -945,8 +1028,8 @@ export default function TaskTracker() {
 
         {/* ── Filter toggle bar ── */}
         {(() => {
-          const hasActiveFilters = priorityFilter !== "all" || catFilter !== "all" || dueFilter !== "all" || filter !== "all" || showResolved;
-          const activeCount = [priorityFilter !== "all", catFilter !== "all", dueFilter !== "all", filter !== "all", showResolved].filter(Boolean).length;
+          const hasActiveFilters = priorityFilter !== "all" || catFilter !== "all" || dueFilter !== "all" || filter !== "all" || showResolved || resolvedOnly;
+          const activeCount = [priorityFilter !== "all", catFilter !== "all", dueFilter !== "all", filter !== "all", showResolved, resolvedOnly].filter(Boolean).length;
           return (
             <div style={{
               display: "flex", alignItems: "center", justifyContent: "space-between",
@@ -969,8 +1052,12 @@ export default function TaskTracker() {
                   <button
                     onClick={e => {
                       e.stopPropagation();
-                      setPriorityFilter("all"); setCatFilter("all"); setDueFilter("all"); setFilter("all");
-                      setShowResolved(false); localStorage.setItem("lcc-show-resolved", "false");
+                      setFilter("all");           localStorage.setItem("lcc-filter", "all");
+                      setCatFilter("all");         localStorage.setItem("lcc-cat-filter", "all");
+                      setPriorityFilter("all");    localStorage.setItem("lcc-priority-filter", "all");
+                      setDueFilter("all");         localStorage.setItem("lcc-due-filter", "all");
+                      setResolvedOnly(false);      localStorage.setItem("lcc-resolved-only", "false");
+                      setShowResolved(false);      localStorage.setItem("lcc-show-resolved", "false");
                     }}
                     style={{ fontSize: "9px", letterSpacing: "1px", color: G.muted, background: "transparent", border: `1px solid ${G.border}`, borderRadius: "4px", padding: "2px 8px", cursor: "pointer", fontFamily: G.font }}>
                     CLEAR
@@ -1026,12 +1113,20 @@ export default function TaskTracker() {
               );
             })}
             <span style={{ width:"1px", background: G.border, flexShrink:0, margin:"0 2px" }} />
-            <button style={dyn.filterBtn(showResolved, "#00c896")} onClick={() => {
-                const next = !showResolved;
-                setShowResolved(next);
-                localStorage.setItem("lcc-show-resolved", String(next));
+            <button style={dyn.filterBtn(showResolved || resolvedOnly, "#00c896")} onClick={() => {
+                if (resolvedOnly) {
+                  // Exit resolvedOnly mode back to normal
+                  setResolvedOnly(false);
+                  setShowResolved(false);
+                  localStorage.setItem("lcc-resolved-only", "false");
+                  localStorage.setItem("lcc-show-resolved", "false");
+                } else {
+                  const next = !showResolved;
+                  setShowResolved(next);
+                  localStorage.setItem("lcc-show-resolved", String(next));
+                }
               }}>
-              {showResolved ? "Hide Done" : "Show Done"}
+              {resolvedOnly ? "← Back to Active" : showResolved ? "HIDE DONE" : "SHOW DONE"}
             </button>
           </div>
         </div>
@@ -1044,9 +1139,43 @@ export default function TaskTracker() {
           {loading && <p style={{ color: G.muted, fontSize:"12px", textAlign:"center" }}>Loading…</p>}
           {!loading && filtered.length === 0 && (
             <div style={base.emptyState}>
-              <div style={{ fontSize:"32px", marginBottom:"12px" }}>⬜</div>
-              <p style={{ fontSize:"12px", letterSpacing:"2px" }}>NO TASKS</p>
-              <p style={{ fontSize:"11px", marginTop:"4px" }}>Tap + to add one</p>
+              <div style={{ fontSize: "32px", marginBottom: "12px" }}>
+                {resolvedOnly ? "✅" : "⬜"}
+              </div>
+              <p style={{ fontSize: "12px", letterSpacing: "2px" }}>
+                {resolvedOnly ? "NO COMPLETED TASKS YET" : "NO TASKS"}
+              </p>
+              <p style={{ fontSize: "11px", marginTop: "4px", color: G.muted }}>
+                {resolvedOnly
+                  ? "Complete a task to see it here"
+                  : filter !== "all" || catFilter !== "all" || priorityFilter !== "all" || dueFilter !== "all"
+                    ? "Try clearing your filters"
+                    : "Tap + to add one"}
+              </p>
+              {resolvedOnly && (
+                <button
+                  style={{ marginTop: "12px", padding: "6px 14px", borderRadius: "6px", background: G.accentGlow, border: `1px solid ${G.accent}`, color: G.accent, fontFamily: G.font, fontSize: "10px", cursor: "pointer" }}
+                  onClick={() => {
+                    setResolvedOnly(false);
+                    setShowResolved(false);
+                    localStorage.setItem("lcc-resolved-only", "false");
+                    localStorage.setItem("lcc-show-resolved", "false");
+                  }}>
+                  ← Back to Active Tasks
+                </button>
+              )}
+              {!resolvedOnly && (filter !== "all" || catFilter !== "all" || priorityFilter !== "all" || dueFilter !== "all") && (
+                <button
+                  style={{ marginTop: "12px", padding: "6px 14px", borderRadius: "6px", background: G.accentGlow, border: `1px solid ${G.accent}`, color: G.accent, fontFamily: G.font, fontSize: "10px", cursor: "pointer" }}
+                  onClick={() => {
+                    setFilter("all"); setCatFilter("all"); setPriorityFilter("all"); setDueFilter("all");
+                    setResolvedOnly(false);
+                    Object.entries({ "lcc-filter":"all", "lcc-cat-filter":"all", "lcc-priority-filter":"all", "lcc-due-filter":"all", "lcc-resolved-only":"false" })
+                      .forEach(([k,v]) => localStorage.setItem(k, v));
+                  }}>
+                  CLEAR FILTERS
+                </button>
+              )}
             </div>
           )}
 
