@@ -45,9 +45,15 @@ Located at the top of `src/App.jsx` (outside the component), the `THEMES` object
 - `blocked_by` is `jsonb` in Supabase (changed from `uuid[]`)
 - Each entry shape: `{ id: string, reason: string }` — reason may be empty string
 - Backward compatibility: existing string UUID entries handled via `typeof entry === "string"` fallback everywhere `blocked_by` is read
-- `BLOCKER_COMPATIBILITY` constant defines which status tracks can block which others — located near `STATUS_PAIRS`
-- Blocker section is collapsed by default in the modal — expands on tap
-- Cross-category blockers are hidden by default — shown via toggle
+- `BLOCKER_COMPATIBILITY` has been removed — the blocker picker now shows all active tasks
+- `blockerTarget` state holds the task being assigned a blocker via the card action
+- `modalMode === "blocker"` opens the standalone blocker picker bottom sheet
+- Blockers can be set/edited/removed from three places: add modal, edit modal, and card action
+- `handleToggleBlockerOnTask(taskId, blockerId)` — adds or removes a blocker on an existing task with immediate Supabase write
+- `handleRemoveBlocker(taskId, blockerId)` — removes a specific blocker with immediate Supabase write
+- Search in the blocker picker checks both title and notes fields
+- Blocker section is collapsed by default in the add/edit modal — expands on tap
+- Cross-category tasks shown below same-category with a divider — never hidden
 
 ## Checklist Feature
 
