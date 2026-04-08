@@ -882,9 +882,9 @@ export default function TaskTracker() {
         )
       : pool;
 
-    // Split same-category first, cross-category second — for visual grouping only
-    const sameCategory  = searched.filter(t => t.category === form.category);
-    const crossCategory = searched.filter(t => t.category !== form.category);
+    // Business always first, Personal second — for visual grouping
+    const sameCategory  = searched.filter(t => t.category === "Business");
+    const crossCategory = searched.filter(t => t.category === "Personal");
 
     return { sameCategory, crossCategory, total: searched.length };
   })();
@@ -979,7 +979,7 @@ export default function TaskTracker() {
     }
   }
 
-  // Blocker picker candidates (for card action modal)
+  // Blocker picker candidates (for card action modal) — Business first
   const blockerPickerCandidates = modalMode === "blocker" && blockerTarget
     ? activeTasks.filter(t => {
         if (t.id === blockerTarget.id) return false;
@@ -990,6 +990,9 @@ export default function TaskTracker() {
           );
         }
         return true;
+      }).sort((a, b) => {
+        if (a.category === b.category) return 0;
+        return a.category === "Business" ? -1 : 1;
       })
     : [];
 
@@ -2052,7 +2055,7 @@ export default function TaskTracker() {
                     </div>
                   )}
 
-                  {/* Cross-category divider */}
+                  {/* Personal divider */}
                   {blockerCandidates.crossCategory.length > 0 && blockerCandidates.sameCategory.length > 0 && (
                     <div style={{
                       display: "flex", alignItems: "center", gap: "8px",
@@ -2060,7 +2063,7 @@ export default function TaskTracker() {
                     }}>
                       <div style={{ flex: 1, height: "1px", background: G.border }} />
                       <span style={{ fontSize: "9px", color: G.muted, letterSpacing: "1px", whiteSpace: "nowrap" }}>
-                        OTHER CATEGORY
+                        PERSONAL
                       </span>
                       <div style={{ flex: 1, height: "1px", background: G.border }} />
                     </div>
