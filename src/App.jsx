@@ -84,19 +84,6 @@ const STATUS_PAIRS = [
   { from: "due",     to: "paid",     label: "DUE → PAID",         desc: "Bill, invoice, rent, or payment that needs to be made or collected" },
 ];
 
-// Which status tracks can logically block which other tracks.
-// Key = the new task's status (what's being created/edited).
-// Value = array of status keys whose tasks can appear as blocker candidates.
-const BLOCKER_COMPATIBILITY = {
-  broke:   ["open", "pending", "draft", "idea", "lost"],
-  open:    ["pending", "draft", "open", "lost"],
-  lost:    ["open", "pending", "draft"],
-  dirty:   ["open", "pending", "broke"],
-  pending: ["pending", "open", "draft", "lost"],
-  draft:   ["pending", "open", "broke", "lost"],
-  idea:    ["open", "pending", "draft", "broke"],
-  due:     ["pending", "open"],  // payments rarely block anything else
-};
 
 const PRIORITIES = [
   { key: "high",   label: "HIGH", color: "#ff4444", icon: "🔥" },
@@ -468,7 +455,7 @@ export default function TaskTracker() {
     return { label: `DUE ${due.toLocaleDateString("en-US", { month:"short", day:"numeric" })}`, color: G.muted };
   }
 
-  // Modal modes: null | "add" | "edit" | "log" | "theme"
+  // Modal modes: null | "add" | "edit" | "log" | "theme" | "blocker"
   const [modalMode,  setModalMode]  = useState(null);
   const [editTarget, setEditTarget] = useState(null);  // task being edited
   const [logTarget,  setLogTarget]  = useState(null);  // task whose log is open
@@ -490,7 +477,11 @@ export default function TaskTracker() {
   // Blocker section state
   const [blockerSectionOpen, setBlockerSectionOpen] = useState(false);
   const [blockerSearch,      setBlockerSearch]      = useState("");
-  const [showCrossCategory,  setShowCrossCategory]  = useState(false);
+
+  // Blocker picker state (card action)
+  const [blockerTarget,             setBlockerTarget]             = useState(null);
+  const [blockerPickerNewSelection, setBlockerPickerNewSelection] = useState(null);
+  const [blockerPickerReason,       setBlockerPickerReason]       = useState("");
 
   // Checklist form state
   const [newChecklist,    setNewChecklist]    = useState([]);
@@ -577,7 +568,6 @@ export default function TaskTracker() {
     setNewLogChecklistItems(task.log_checklist_items || false);
     setBlockerSectionOpen((task.blocked_by || []).length > 0);
     setBlockerSearch("");
-    setShowCrossCategory(false);
     setModalMode("edit");
   }
   function openLog(task, e) {
@@ -592,7 +582,8 @@ export default function TaskTracker() {
     setFormError(""); setSaving(false);
     setLogNoteError(""); setCopyConfirm(false); setLogSearch("");
     setNewChecklist([]); setNewChecklistItem(""); setNewLogChecklistItems(false);
-    setBlockerSectionOpen(false); setBlockerSearch(""); setShowCrossCategory(false);
+    setBlockerSectionOpen(false); setBlockerSearch("");
+    setBlockerTarget(null); setBlockerPickerNewSelection(null); setBlockerPickerReason("");
     setModalDragState(null);
   }
 
@@ -878,25 +869,20 @@ export default function TaskTracker() {
 
   // Compute filtered blocker candidates
   const blockerCandidates = (() => {
-    // All active tasks excluding the task being edited
+    // All active tasks excluding the task being edited or created
     const pool = activeTasks.filter(t =>
       modalMode === "edit" ? t.id !== editTarget?.id : true
     );
 
-    // Get compatible tracks for the current status selection
-    const compatibleStatuses = BLOCKER_COMPATIBILITY[form.status] || [];
-
-    // Filter to compatible tracks only
-    const compatible = pool.filter(t => compatibleStatuses.includes(t.status));
-
-    // Apply search filter
+    // Apply search filter only — no track compatibility filtering
     const searched = blockerSearch.trim()
-      ? compatible.filter(t =>
-          t.title.toLowerCase().includes(blockerSearch.toLowerCase())
+      ? pool.filter(t =>
+          t.title.toLowerCase().includes(blockerSearch.toLowerCase()) ||
+          t.notes?.toLowerCase().includes(blockerSearch.toLowerCase())
         )
-      : compatible;
+      : pool;
 
-    // Split into same-category and cross-category
+    // Split same-category first, cross-category second — for visual grouping only
     const sameCategory  = searched.filter(t => t.category === form.category);
     const crossCategory = searched.filter(t => t.category !== form.category);
 
@@ -919,6 +905,93 @@ export default function TaskTracker() {
     });
     return entry ? (typeof entry === "string" ? "" : entry.reason || "") : "";
   }
+
+  // ── Blocker picker helpers (card action) ──
+  function isBlockerSelectedOnTask(task, candidateId) {
+    return (task.blocked_by || []).some(e => {
+      const id = typeof e === "string" ? e : e.id;
+      return id === candidateId;
+    });
+  }
+
+  async function handleToggleBlockerOnTask(taskId, blockerId) {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+
+    // If there's a pending reason for a previous selection, save it first
+    if (blockerPickerNewSelection && blockerPickerNewSelection !== blockerId && blockerPickerReason.trim()) {
+      const updatedBlockedBy = (task.blocked_by || []).map(e => {
+        const id = typeof e === "string" ? e : e.id;
+        return id === blockerPickerNewSelection
+          ? { id, reason: blockerPickerReason.trim() }
+          : e;
+      });
+      await updateTask(taskId, { blocked_by: updatedBlockedBy });
+      setTasks(ts => ts.map(t => t.id === taskId ? { ...t, blocked_by: updatedBlockedBy } : t));
+      setBlockerTarget(prev => prev ? { ...prev, blocked_by: updatedBlockedBy } : null);
+      // Update task reference for the rest of the function
+      task.blocked_by = updatedBlockedBy;
+    }
+
+    const currentlySelected = isBlockerSelectedOnTask(task, blockerId);
+
+    let newBlockedBy;
+    if (currentlySelected) {
+      newBlockedBy = (task.blocked_by || []).filter(e => {
+        const id = typeof e === "string" ? e : e.id;
+        return id !== blockerId;
+      });
+      setBlockerPickerNewSelection(null);
+      setBlockerPickerReason("");
+    } else {
+      const entry = { id: blockerId, reason: blockerPickerReason.trim() };
+      newBlockedBy = [...(task.blocked_by || []), entry];
+      setBlockerPickerNewSelection(blockerId);
+      setBlockerPickerReason("");
+    }
+
+    try {
+      const { error } = await updateTask(taskId, { blocked_by: newBlockedBy });
+      if (error) throw error;
+      setTasks(ts => ts.map(t => t.id === taskId ? { ...t, blocked_by: newBlockedBy } : t));
+      setBlockerTarget(prev => prev ? { ...prev, blocked_by: newBlockedBy } : null);
+    } catch {
+      console.error("Couldn't update blocker.");
+    }
+  }
+
+  async function handleRemoveBlocker(taskId, blockerId) {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+
+    const newBlockedBy = (task.blocked_by || []).filter(e => {
+      const id = typeof e === "string" ? e : e.id;
+      return id !== blockerId;
+    });
+
+    try {
+      const { error } = await updateTask(taskId, { blocked_by: newBlockedBy });
+      if (error) throw error;
+      setTasks(ts => ts.map(t => t.id === taskId ? { ...t, blocked_by: newBlockedBy } : t));
+      setBlockerTarget(prev => prev ? { ...prev, blocked_by: newBlockedBy } : null);
+    } catch {
+      console.error("Couldn't remove blocker.");
+    }
+  }
+
+  // Blocker picker candidates (for card action modal)
+  const blockerPickerCandidates = modalMode === "blocker" && blockerTarget
+    ? activeTasks.filter(t => {
+        if (t.id === blockerTarget.id) return false;
+        if (blockerSearch.trim()) {
+          return (
+            t.title.toLowerCase().includes(blockerSearch.toLowerCase()) ||
+            t.notes?.toLowerCase().includes(blockerSearch.toLowerCase())
+          );
+        }
+        return true;
+      })
+    : [];
 
   // ─── RENDER ────────────────────────────────────────────────────────────────
   return (
@@ -1540,6 +1613,17 @@ export default function TaskTracker() {
                         </button>
                       )}
                       <button type="button" style={dyn.actionBtn(G.accent)} onClick={e => openEdit(task, e)}>✏ Edit</button>
+                      <button
+                        type="button"
+                        style={dyn.actionBtn(G.accent, true)}
+                        onClick={e => {
+                          e.stopPropagation();
+                          setBlockerTarget(task);
+                          setBlockerSearch("");
+                          setModalMode("blocker");
+                        }}>
+                        🔒 {(task.blocked_by || []).length > 0 ? `Blockers (${(task.blocked_by || []).length})` : "Add Blocker"}
+                      </button>
                       <button type="button" style={dyn.actionBtn("#38bdf8")} onClick={e => openLog(task, e)}>📋 Log ({logCount})</button>
                       <button type="button" style={dyn.actionBtn("#ff4444", true)} onClick={e => handleDelete(task.id, e)}>Delete</button>
                     </div>
@@ -1857,8 +1941,8 @@ export default function TaskTracker() {
                       </p>
                       <p style={{ fontSize: "10px", color: G.muted, margin: 0, lineHeight: 1.4 }}>
                         {blockerCandidates.total === 0
-                          ? "No compatible tasks found"
-                          : `${blockerCandidates.total} compatible task${blockerCandidates.total !== 1 ? "s" : ""} — tap to select`}
+                          ? "No active tasks found"
+                          : `${blockerCandidates.total} active task${blockerCandidates.total !== 1 ? "s" : ""} — tap to select`}
                       </p>
                     </div>
                     <button
@@ -1868,21 +1952,23 @@ export default function TaskTracker() {
                     </button>
                   </div>
 
-                  {/* Search — only shown when 4+ candidates */}
-                  {blockerCandidates.total >= 4 && (
+                  {/* Search — shown when 2+ candidates */}
+                  {blockerCandidates.total >= 2 && (
                     <input
                       style={{ ...base.input, marginBottom: "10px", fontSize: "12px" }}
-                      placeholder="Search tasks…"
+                      placeholder="Search all active tasks…"
                       value={blockerSearch}
                       onChange={e => setBlockerSearch(e.target.value)}
+                      autoFocus
                     />
                   )}
 
-                  {/* No compatible tasks */}
+                  {/* Empty state */}
                   {blockerCandidates.total === 0 && (
-                    <p style={{ fontSize: "11px", color: G.muted, textAlign: "center", padding: "12px 0" }}>
-                      No active {form.category} tasks can logically block a{" "}
-                      {STATUS_PAIRS.find(p => p.from === form.status)?.label || form.status} task.
+                    <p style={{ fontSize: "11px", color: G.muted, textAlign: "center", padding: "16px 0" }}>
+                      {blockerSearch.trim()
+                        ? `No active tasks match "${blockerSearch}"`
+                        : "No other active tasks exist yet — add the blocker task first, then come back to set this relationship."}
                     </p>
                   )}
 
@@ -1966,99 +2052,95 @@ export default function TaskTracker() {
                     </div>
                   )}
 
-                  {/* Cross-category toggle */}
-                  {blockerCandidates.crossCategory.length > 0 && (
-                    <div style={{ marginTop: "10px" }}>
-                      <button
-                        style={{
-                          background: "transparent", border: "none",
-                          color: G.muted, fontFamily: G.font,
-                          fontSize: "10px", letterSpacing: "1px",
-                          cursor: "pointer", padding: "6px 0",
-                          display: "flex", alignItems: "center", gap: "6px",
-                        }}
-                        onClick={() => setShowCrossCategory(v => !v)}>
-                        <span style={{ fontSize: "10px" }}>{showCrossCategory ? "▾" : "▸"}</span>
-                        {showCrossCategory ? "Hide" : "Show"} {blockerCandidates.crossCategory.length} cross-category task{blockerCandidates.crossCategory.length !== 1 ? "s" : ""}
-                      </button>
+                  {/* Cross-category divider */}
+                  {blockerCandidates.crossCategory.length > 0 && blockerCandidates.sameCategory.length > 0 && (
+                    <div style={{
+                      display: "flex", alignItems: "center", gap: "8px",
+                      margin: "8px 0",
+                    }}>
+                      <div style={{ flex: 1, height: "1px", background: G.border }} />
+                      <span style={{ fontSize: "9px", color: G.muted, letterSpacing: "1px", whiteSpace: "nowrap" }}>
+                        OTHER CATEGORY
+                      </span>
+                      <div style={{ flex: 1, height: "1px", background: G.border }} />
+                    </div>
+                  )}
 
-                      {showCrossCategory && (
-                        <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginTop: "6px" }}>
-                          {blockerCandidates.crossCategory.map(t => {
-                            const selected = isBlockerSelected(t.id);
-                            const reason   = getBlockerReason(t.id);
-                            const s        = STATUS_MAP[t.status];
-                            return (
-                              <div key={t.id}>
-                                <div
-                                  style={{
-                                    display: "flex", alignItems: "center", gap: "10px",
-                                    padding: "10px 12px",
-                                    borderRadius: selected ? "8px 8px 0 0" : "8px",
-                                    cursor: "pointer",
-                                    border: `1px solid ${selected ? G.accent : G.border}`,
-                                    borderLeft: `3px solid ${selected ? G.accent : s?.color || G.border}`,
-                                    background: selected ? G.accentGlow : G.surface,
-                                    opacity: 0.8,
-                                    transition: "all 0.15s",
-                                  }}
-                                  onClick={() => toggleBlockedBy(t.id)}>
-                                  <div style={{
-                                    width: "18px", height: "18px", borderRadius: "4px", flexShrink: 0,
-                                    border: `1.5px solid ${selected ? G.accent : G.muted}`,
-                                    background: selected ? G.accent : "transparent",
-                                    display: "flex", alignItems: "center", justifyContent: "center",
-                                    transition: "all 0.15s",
-                                  }}>
-                                    {selected && <span style={{ color: "#fff", fontSize: "11px", lineHeight: 1 }}>✓</span>}
-                                  </div>
-                                  <div style={{ flex: 1 }}>
-                                    <span style={{ fontSize: "12px", color: selected ? G.text : G.muted, display: "block", lineHeight: 1.3 }}>
-                                      {t.title}
-                                    </span>
-                                    <span style={{ fontSize: "9px", color: G.muted, letterSpacing: "0.5px" }}>
-                                      {t.category}
-                                    </span>
-                                  </div>
-                                  <span style={{
-                                    fontSize: "9px", letterSpacing: "1px",
-                                    color: s?.color || G.muted,
-                                    border: `1px solid ${s?.color || G.muted}`,
-                                    padding: "1px 6px", borderRadius: "3px", flexShrink: 0,
-                                  }}>
-                                    {s?.label}
-                                  </span>
-                                </div>
-                                {selected && (
-                                  <div style={{
-                                    borderLeft: `3px solid ${G.accent}`,
-                                    borderRight: `1px solid ${G.accent}`,
-                                    borderBottom: `1px solid ${G.accent}`,
-                                    borderRadius: "0 0 8px 8px",
-                                    padding: "8px 12px",
-                                    background: `${G.accent}08`,
-                                  }}>
-                                    <input
-                                      style={{
-                                        width: "100%", background: "transparent",
-                                        border: "none", borderBottom: `1px solid ${G.border}`,
-                                        color: G.text, fontFamily: G.font,
-                                        fontSize: "11px", padding: "4px 0",
-                                        outline: "none", boxSizing: "border-box",
-                                      }}
-                                      placeholder="Why is this blocking? (optional)"
-                                      maxLength={80}
-                                      value={reason}
-                                      onChange={e => updateBlockerReason(t.id, e.target.value)}
-                                      onClick={e => e.stopPropagation()}
-                                    />
-                                  </div>
-                                )}
+                  {/* Cross-category tasks */}
+                  {blockerCandidates.crossCategory.length > 0 && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                      {blockerCandidates.crossCategory.map(t => {
+                        const selected = isBlockerSelected(t.id);
+                        const reason   = getBlockerReason(t.id);
+                        const s        = STATUS_MAP[t.status];
+                        return (
+                          <div key={t.id}>
+                            <div
+                              style={{
+                                display: "flex", alignItems: "center", gap: "10px",
+                                padding: "10px 12px",
+                                borderRadius: selected ? "8px 8px 0 0" : "8px",
+                                cursor: "pointer",
+                                border: `1px solid ${selected ? G.accent : G.border}`,
+                                borderLeft: `3px solid ${selected ? G.accent : s?.color || G.border}`,
+                                background: selected ? G.accentGlow : G.surface,
+                                transition: "all 0.15s",
+                              }}
+                              onClick={() => toggleBlockedBy(t.id)}>
+                              <div style={{
+                                width: "18px", height: "18px", borderRadius: "4px", flexShrink: 0,
+                                border: `1.5px solid ${selected ? G.accent : G.muted}`,
+                                background: selected ? G.accent : "transparent",
+                                display: "flex", alignItems: "center", justifyContent: "center",
+                                transition: "all 0.15s",
+                              }}>
+                                {selected && <span style={{ color: "#fff", fontSize: "11px", lineHeight: 1 }}>✓</span>}
                               </div>
-                            );
-                          })}
-                        </div>
-                      )}
+                              <div style={{ flex: 1 }}>
+                                <span style={{ fontSize: "12px", color: selected ? G.text : G.muted, display: "block", lineHeight: 1.3 }}>
+                                  {t.title}
+                                </span>
+                                <span style={{ fontSize: "9px", color: G.muted, letterSpacing: "0.5px" }}>
+                                  {t.category}
+                                </span>
+                              </div>
+                              <span style={{
+                                fontSize: "9px", letterSpacing: "1px",
+                                color: s?.color || G.muted,
+                                border: `1px solid ${s?.color || G.muted}`,
+                                padding: "1px 6px", borderRadius: "3px", flexShrink: 0,
+                              }}>
+                                {s?.label}
+                              </span>
+                            </div>
+                            {selected && (
+                              <div style={{
+                                borderLeft: `3px solid ${G.accent}`,
+                                borderRight: `1px solid ${G.accent}`,
+                                borderBottom: `1px solid ${G.accent}`,
+                                borderRadius: "0 0 8px 8px",
+                                padding: "8px 12px",
+                                background: `${G.accent}08`,
+                              }}>
+                                <input
+                                  style={{
+                                    width: "100%", background: "transparent",
+                                    border: "none", borderBottom: `1px solid ${G.border}`,
+                                    color: G.text, fontFamily: G.font,
+                                    fontSize: "11px", padding: "4px 0",
+                                    outline: "none", boxSizing: "border-box",
+                                  }}
+                                  placeholder="Why is this blocking? (optional)"
+                                  maxLength={80}
+                                  value={reason}
+                                  onChange={e => updateBlockerReason(t.id, e.target.value)}
+                                  onClick={e => e.stopPropagation()}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
 
@@ -2217,6 +2299,157 @@ export default function TaskTracker() {
                 ADD NOTE
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══ BLOCKER PICKER MODAL ══ */}
+      {modalMode === "blocker" && blockerTarget && (
+        <div style={base.modal} onClick={closeModal}>
+          <div style={{ ...base.modalBox, maxHeight: "75vh" }} onClick={e => e.stopPropagation()}>
+
+            {/* Header */}
+            <div style={{ marginBottom: "16px" }}>
+              <h2 style={{ fontFamily: G.fontDisplay, fontSize: "15px", fontWeight: 900, color: G.text, margin: "0 0 4px" }}>
+                Set Blocker
+              </h2>
+              <p style={{ fontSize: "11px", color: G.muted, margin: 0, lineHeight: 1.5 }}>
+                {blockerTarget.title}
+              </p>
+            </div>
+
+            {/* Currently selected blockers */}
+            {(blockerTarget.blocked_by || []).length > 0 && (
+              <div style={{ marginBottom: "14px" }}>
+                <p style={{ fontSize: "9px", letterSpacing: "1.5px", color: G.muted, margin: "0 0 6px", textTransform: "uppercase" }}>
+                  Currently Blocking
+                </p>
+                {(blockerTarget.blocked_by || []).map(entry => {
+                  const id = typeof entry === "string" ? entry : entry.id;
+                  const reason = typeof entry === "string" ? "" : entry.reason || "";
+                  const blocker = tasks.find(t => t.id === id);
+                  if (!blocker) return null;
+                  return (
+                    <div key={id} style={{
+                      display: "flex", alignItems: "center", gap: "8px",
+                      padding: "8px 10px", borderRadius: "6px",
+                      background: `${G.accent}11`,
+                      border: `1px solid ${G.accent}33`,
+                      marginBottom: "5px",
+                    }}>
+                      <span style={{ fontSize: "12px", color: G.text, flex: 1 }}>{blocker.title}</span>
+                      {reason && (
+                        <span style={{ fontSize: "10px", color: G.muted, fontStyle: "italic", maxWidth: "120px", textAlign: "right" }}>
+                          {reason}
+                        </span>
+                      )}
+                      <button
+                        style={{ background: "transparent", border: "none", color: "#ff4444", fontSize: "12px", cursor: "pointer", padding: "0 4px", flexShrink: 0 }}
+                        onClick={() => handleRemoveBlocker(blockerTarget.id, id)}>
+                        ✕
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Search */}
+            <input
+              style={{ ...base.input, marginBottom: "10px", fontSize: "13px" }}
+              placeholder="Search all active tasks…"
+              value={blockerSearch}
+              onChange={e => setBlockerSearch(e.target.value)}
+              autoFocus
+            />
+
+            {/* Task list */}
+            <div style={{ display: "flex", flexDirection: "column", gap: "6px", overflowY: "auto", maxHeight: "320px" }}>
+              {blockerPickerCandidates.length === 0 && (
+                <p style={{ fontSize: "11px", color: G.muted, textAlign: "center", padding: "16px 0" }}>
+                  {blockerSearch.trim()
+                    ? `No tasks match "${blockerSearch}"`
+                    : "No other active tasks to select."}
+                </p>
+              )}
+
+              {blockerPickerCandidates.map(t => {
+                const alreadySelected = isBlockerSelectedOnTask(blockerTarget, t.id);
+                const s = STATUS_MAP[t.status];
+                return (
+                  <div
+                    key={t.id}
+                    style={{
+                      display: "flex", alignItems: "center", gap: "10px",
+                      padding: "10px 12px", borderRadius: "8px",
+                      border: `1px solid ${alreadySelected ? G.accent : G.border}`,
+                      borderLeft: `3px solid ${alreadySelected ? G.accent : s?.color || G.border}`,
+                      background: alreadySelected ? G.accentGlow : G.surface,
+                      cursor: "pointer", transition: "all 0.15s",
+                    }}
+                    onClick={() => handleToggleBlockerOnTask(blockerTarget.id, t.id)}>
+
+                    {/* Checkbox */}
+                    <div style={{
+                      width: "18px", height: "18px", borderRadius: "4px", flexShrink: 0,
+                      border: `1.5px solid ${alreadySelected ? G.accent : G.muted}`,
+                      background: alreadySelected ? G.accent : "transparent",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      transition: "all 0.15s",
+                    }}>
+                      {alreadySelected && <span style={{ color: "#fff", fontSize: "11px", lineHeight: 1 }}>✓</span>}
+                    </div>
+
+                    {/* Task info */}
+                    <div style={{ flex: 1 }}>
+                      <span style={{ fontSize: "12px", color: alreadySelected ? G.text : G.muted, display: "block", lineHeight: 1.3 }}>
+                        {t.title}
+                      </span>
+                      <span style={{ fontSize: "9px", color: G.muted, letterSpacing: "0.5px" }}>
+                        {t.category} · {s?.label}
+                      </span>
+                    </div>
+
+                    {/* Status color dot */}
+                    <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: s?.color || G.muted, flexShrink: 0 }} />
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Reason field — shows when a new blocker is selected */}
+            {blockerPickerNewSelection && (
+              <div style={{ marginTop: "12px", padding: "10px 12px", background: `${G.accent}0a`, border: `1px solid ${G.accent}22`, borderRadius: "8px" }}>
+                <p style={{ fontSize: "9px", color: G.accent, letterSpacing: "1.5px", margin: "0 0 6px", textTransform: "uppercase" }}>
+                  Why is this blocking? (optional)
+                </p>
+                <input
+                  style={{ width: "100%", background: "transparent", border: "none", borderBottom: `1px solid ${G.border}`, color: G.text, fontFamily: G.font, fontSize: "12px", padding: "4px 0", outline: "none", boxSizing: "border-box" }}
+                  placeholder="e.g. Need attorney confirmed before sending"
+                  maxLength={80}
+                  value={blockerPickerReason}
+                  onChange={e => setBlockerPickerReason(e.target.value)}
+                />
+              </div>
+            )}
+
+            {/* Footer buttons */}
+            <div style={{ ...base.modalBtns, marginTop: "16px" }}>
+              <button style={dyn.secondaryBtn} onClick={async () => {
+                if (blockerPickerNewSelection && blockerPickerReason.trim() && blockerTarget) {
+                  const updatedBlockedBy = (blockerTarget.blocked_by || []).map(e => {
+                    const id = typeof e === "string" ? e : e.id;
+                    return id === blockerPickerNewSelection
+                      ? { id, reason: blockerPickerReason.trim() }
+                      : e;
+                  });
+                  await updateTask(blockerTarget.id, { blocked_by: updatedBlockedBy });
+                  setTasks(ts => ts.map(t => t.id === blockerTarget.id ? { ...t, blocked_by: updatedBlockedBy } : t));
+                }
+                closeModal();
+              }}>Done</button>
+            </div>
+
           </div>
         </div>
       )}
