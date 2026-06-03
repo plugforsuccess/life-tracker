@@ -107,72 +107,72 @@ const THEMES = {
     bg: "#0a0a0f", surface: "#111118", border: "#1e1e2e",
     text: "#e8e8f0", muted: "#5a5a7a", accent: "#7c6af7",
     accentGlow: "rgba(124,106,247,0.2)",
-    font: "'DM Mono','Courier New',monospace",
-    fontDisplay: "'Syne','Arial Black',sans-serif",
+    font: "'Inter','Helvetica Neue',sans-serif",
+    fontDisplay: "'Fraunces','Georgia',serif",
   },
   daylight: {
     name: "Daylight", mode: "light",
     bg: "#f4f4f8", surface: "#ffffff", border: "#e0e0ea",
     text: "#0a0a0f", muted: "#8888aa", accent: "#7c6af7",
     accentGlow: "rgba(124,106,247,0.12)",
-    font: "'DM Mono','Courier New',monospace",
-    fontDisplay: "'Syne','Arial Black',sans-serif",
+    font: "'Inter','Helvetica Neue',sans-serif",
+    fontDisplay: "'Fraunces','Georgia',serif",
   },
   forest: {
     name: "Forest", mode: "dark",
     bg: "#0b1210", surface: "#121f1c", border: "#1e3330",
     text: "#d4ede8", muted: "#4a7a72", accent: "#2dd4a0",
     accentGlow: "rgba(45,212,160,0.18)",
-    font: "'DM Mono','Courier New',monospace",
-    fontDisplay: "'Syne','Arial Black',sans-serif",
+    font: "'Inter','Helvetica Neue',sans-serif",
+    fontDisplay: "'Fraunces','Georgia',serif",
   },
   ember: {
     name: "Ember", mode: "dark",
     bg: "#110a08", surface: "#1c1210", border: "#2e1e1a",
     text: "#f0ddd8", muted: "#7a4a42", accent: "#ff6b42",
     accentGlow: "rgba(255,107,66,0.18)",
-    font: "'DM Mono','Courier New',monospace",
-    fontDisplay: "'Syne','Arial Black',sans-serif",
+    font: "'Inter','Helvetica Neue',sans-serif",
+    fontDisplay: "'Fraunces','Georgia',serif",
   },
   arctic: {
     name: "Arctic", mode: "light",
     bg: "#eef4f8", surface: "#ffffff", border: "#ccdde8",
     text: "#0a1520", muted: "#7a9ab0", accent: "#0077cc",
     accentGlow: "rgba(0,119,204,0.12)",
-    font: "'DM Mono','Courier New',monospace",
-    fontDisplay: "'Syne','Arial Black',sans-serif",
+    font: "'Inter','Helvetica Neue',sans-serif",
+    fontDisplay: "'Fraunces','Georgia',serif",
   },
   gold: {
     name: "Gold", mode: "dark",
     bg: "#0f0e08", surface: "#1a1810", border: "#2e2a18",
     text: "#f0ead0", muted: "#7a7248", accent: "#d4a820",
     accentGlow: "rgba(212,168,32,0.18)",
-    font: "'DM Mono','Courier New',monospace",
-    fontDisplay: "'Syne','Arial Black',sans-serif",
+    font: "'Inter','Helvetica Neue',sans-serif",
+    fontDisplay: "'Fraunces','Georgia',serif",
   },
   rose: {
     name: "Rose", mode: "light",
     bg: "#fdf4f6", surface: "#ffffff", border: "#f0d8de",
     text: "#1a080d", muted: "#b07888", accent: "#d4205a",
     accentGlow: "rgba(212,32,90,0.1)",
-    font: "'DM Mono','Courier New',monospace",
-    fontDisplay: "'Syne','Arial Black',sans-serif",
+    font: "'Inter','Helvetica Neue',sans-serif",
+    fontDisplay: "'Fraunces','Georgia',serif",
   },
   slate: {
     name: "Slate", mode: "dark",
     bg: "#0d1117", surface: "#161b22", border: "#21262d",
     text: "#e6edf3", muted: "#6e7681", accent: "#58a6ff",
     accentGlow: "rgba(88,166,255,0.18)",
-    font: "'DM Mono','Courier New',monospace",
-    fontDisplay: "'Syne','Arial Black',sans-serif",
+    font: "'Inter','Helvetica Neue',sans-serif",
+    fontDisplay: "'Fraunces','Georgia',serif",
   },
   sandstone: {
     name: "Sand & Stone", mode: "light",
     bg: "#faf6f0", surface: "#ffffff", border: "#e8ddd0",
     text: "#1a1208", muted: "#9a8878", accent: "#a07850",
     accentGlow: "rgba(160,120,80,0.12)",
-    font: "'DM Mono','Courier New',monospace",
-    fontDisplay: "'Syne','Arial Black',sans-serif",
+    font: "'Inter','Helvetica Neue',sans-serif",
+    fontDisplay: "'Fraunces','Georgia',serif",
   },
 };
 
@@ -1353,70 +1353,73 @@ export default function TaskTracker() {
               <div key={task.id} className="lcc-card" style={dyn.card(s.color, isBlocked, { isOverdue, isHigh, isResolved })}
                 onClick={() => setExpandedId(expanded ? null : task.id)}>
 
-                {/* Top row */}
-                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:"8px" }}>
+                {/* Title row */}
+                <div style={{ display:"flex", alignItems:"flex-start", gap:"8px" }}>
                   <span style={{
-                    fontFamily: G.fontDisplay, fontSize:"14px", fontWeight:700, lineHeight:1.3, flex:1,
+                    fontFamily: G.fontDisplay, fontSize:"15px", fontWeight:600, lineHeight:1.3, flex:1,
                     textDecoration: isResolved ? "line-through" : "none",
                     color: isResolved ? G.muted : G.text,
                   }}>
                     {isBlocked && <span style={{ color:"#ff4444", marginRight:"6px" }}>🔒</span>}
                     {task.title}
                   </span>
-                  <div style={{ display:"flex", flexDirection:"column", gap:"4px", alignItems:"flex-end", flexShrink:0 }}>
-                    <span style={dyn.badge(s.color)}>{s.emoji} {s.label}</span>
-                    {!isResolved && <span style={dyn.badge(p.color)}>{p.icon} {p.label}</span>}
-                  </div>
                 </div>
 
-                {/* Meta row */}
-                <div style={{ display:"flex", gap:"10px", marginTop:"8px", alignItems:"center", flexWrap:"wrap" }}>
+                {/* Type + status + priority row */}
+                <div style={{ display:"flex", gap:"8px", marginTop:"8px", alignItems:"center", flexWrap:"wrap" }}>
                   <span style={dyn.catTag(task.category)}>{task.category}</span>
-                  {dueInfo && <span style={{ fontSize:"9px", color: dueInfo.color, letterSpacing:"1px", fontWeight:700 }}>{dueInfo.label}</span>}
-                  {isResolved && <span style={{ fontSize:"9px", color:"#00c896" }}>✓ DONE</span>}
-                  {isBlocked && <span style={{ fontSize:"9px", color:"#ff4444" }}>BLOCKED BY {blockers.length}</span>}
-                  {logCount > 0 && <span style={{ fontSize:"9px", color: G.muted }}>📋 {logCount} note{logCount!==1?"s":""}</span>}
-                  {(() => {
-                    const progress = checklistProgress(task.checklist);
-                    return progress ? (
-                      <span style={{
-                        fontSize: "9px",
-                        color: progress.complete ? "#00c896" : G.muted,
-                        letterSpacing: "1px",
-                        fontWeight: progress.complete ? 700 : 400,
-                      }}>
-                        {progress.complete ? "✓" : "☐"} {progress.done}/{progress.total}
-                      </span>
-                    ) : null;
-                  })()}
-                  {task.log_checklist_items && (task.checklist || []).length > 0 && (
-                    <span style={{ fontSize: "9px", color: G.accent, letterSpacing: "1px" }}>
-                      📋 LOGGED
-                    </span>
-                  )}
+                  <span style={dyn.badge(s.color)}>{s.emoji} {s.label}</span>
+                  {!isResolved && <span style={dyn.badge(p.color)}>{p.icon} {p.label}</span>}
                 </div>
 
-                {task.notes && <p style={{ fontSize:"11px", color: G.muted, marginTop:"6px", lineHeight:1.5 }}>{task.notes}</p>}
-
-                {(() => {
-                  const latest = latestUserNote(task.activity_log);
-                  return latest ? (
-                    <p style={{
-                      fontSize: "10px",
-                      color: G.accent,
-                      marginTop: "5px",
-                      lineHeight: 1.4,
-                      opacity: 0.85,
-                      fontStyle: "italic",
-                    }}>
-                      📝 {latest.text.length > 60 ? latest.text.slice(0, 60) + "…" : latest.text}
-                    </p>
-                  ) : null;
-                })()}
-
-                {/* Expanded actions */}
+                {/* Expanded details */}
                 {expanded && (
                   <div onClick={e => e.stopPropagation()}>
+
+                    {/* Meta row */}
+                    <div style={{ display:"flex", gap:"10px", marginTop:"12px", alignItems:"center", flexWrap:"wrap" }}>
+                      {dueInfo && <span style={{ fontSize:"9px", color: dueInfo.color, letterSpacing:"1px", fontWeight:700 }}>{dueInfo.label}</span>}
+                      {isResolved && <span style={{ fontSize:"9px", color:"#00c896" }}>✓ DONE</span>}
+                      {isBlocked && <span style={{ fontSize:"9px", color:"#ff4444" }}>BLOCKED BY {blockers.length}</span>}
+                      {logCount > 0 && <span style={{ fontSize:"9px", color: G.muted }}>📋 {logCount} note{logCount!==1?"s":""}</span>}
+                      {(() => {
+                        const progress = checklistProgress(task.checklist);
+                        return progress ? (
+                          <span style={{
+                            fontSize: "9px",
+                            color: progress.complete ? "#00c896" : G.muted,
+                            letterSpacing: "1px",
+                            fontWeight: progress.complete ? 700 : 400,
+                          }}>
+                            {progress.complete ? "✓" : "☐"} {progress.done}/{progress.total}
+                          </span>
+                        ) : null;
+                      })()}
+                      {task.log_checklist_items && (task.checklist || []).length > 0 && (
+                        <span style={{ fontSize: "9px", color: G.accent, letterSpacing: "1px" }}>
+                          📋 LOGGED
+                        </span>
+                      )}
+                    </div>
+
+                    {task.notes && <p style={{ fontSize:"11px", color: G.muted, marginTop:"6px", lineHeight:1.5 }}>{task.notes}</p>}
+
+                    {(() => {
+                      const latest = latestUserNote(task.activity_log);
+                      return latest ? (
+                        <p style={{
+                          fontSize: "10px",
+                          color: G.accent,
+                          marginTop: "5px",
+                          lineHeight: 1.4,
+                          opacity: 0.85,
+                          fontStyle: "italic",
+                        }}>
+                          📝 {latest.text.length > 60 ? latest.text.slice(0, 60) + "…" : latest.text}
+                        </p>
+                      ) : null;
+                    })()}
+
                     {isBlocked && (
                       <div style={{ marginTop:"10px", padding:"8px 10px", background:"#ff444411", borderRadius:"6px", border:"1px solid #ff444433" }}>
                         <p style={{ fontSize:"9px", color:"#ff4444", letterSpacing:"1px", margin:"0 0 6px" }}>BLOCKED BY:</p>
@@ -1589,26 +1592,21 @@ export default function TaskTracker() {
                       </div>
                     )}
 
-                    <div style={{ display:"flex", gap:"8px", marginTop:"12px", flexWrap:"wrap" }}>
+                    {s.next && !isBlocked && (() => {
+                      const progress = checklistProgress(task.checklist);
+                      const hasUnfinished = progress && !progress.complete;
+                      return hasUnfinished ? (
+                        <p style={{ fontSize: "9px", color: "#ffc107", letterSpacing: "0.5px", margin: "12px 0 0" }}>
+                          ⚠ {progress.total - progress.done} checklist item{progress.total - progress.done !== 1 ? "s" : ""} remaining
+                        </p>
+                      ) : null;
+                    })()}
+
+                    <div style={{ display:"flex", gap:"8px", marginTop:"8px", flexWrap:"wrap", alignItems:"center" }}>
                       {s.next && !isBlocked && (
-                        <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                          {(() => {
-                            const progress = checklistProgress(task.checklist);
-                            const hasUnfinished = progress && !progress.complete;
-                            return (
-                              <>
-                                {hasUnfinished && (
-                                  <p style={{ fontSize: "9px", color: "#ffc107", letterSpacing: "0.5px", margin: 0 }}>
-                                    ⚠ {progress.total - progress.done} checklist item{progress.total - progress.done !== 1 ? "s" : ""} remaining
-                                  </p>
-                                )}
-                                <button type="button" style={dyn.actionBtn("#00c896")} onClick={() => handleAdvance(task)}>
-                                  → Mark {STATUS_MAP[s.next]?.label}
-                                </button>
-                              </>
-                            );
-                          })()}
-                        </div>
+                        <button type="button" style={dyn.actionBtn("#00c896")} onClick={() => handleAdvance(task)}>
+                          → Mark {STATUS_MAP[s.next]?.label}
+                        </button>
                       )}
                       {isResolved && (
                         <button type="button" style={dyn.actionBtn("#ffc107")} onClick={e => handleReopen(task, e)}>
