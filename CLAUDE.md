@@ -24,6 +24,8 @@ Located at the top of `src/App.jsx` (outside the component), the `THEMES` object
 }
 ```
 
+Typography: `font` is the body stack (`Inter`, sans-serif) and `fontDisplay` is the heading/title stack (`Fraunces`, serif). Both are loaded via the Google Fonts `<link>` in `index.html`.
+
 ### How to add a new theme
 
 1. Copy an existing theme entry in the `THEMES` object
@@ -37,6 +39,13 @@ Located at the top of `src/App.jsx` (outside the component), the `THEMES` object
 - `base` and `dyn` style objects are defined inside the component so they re-derive on every render when the theme changes
 - Status colors (`#ff4444`, `#ffc107`, etc.) and priority colors are NOT themeable — they stay hardcoded
 - The localStorage key is `"lcc-theme"` (stores the theme key string, e.g., `"midnight"`)
+
+## Task Card Layout
+
+- `expandedId` state holds the id of the currently expanded card (`null` when all collapsed); tapping a card toggles it
+- **Collapsed** card shows only two rows: the title row, and a type+status+priority row (`catTag` + status `badge` + priority `badge`)
+- **Expanded** (`expanded && ...`) reveals everything else: the meta row (due, done, blocked count, note count, checklist progress, logged), notes, latest user note, blocker list, checklist, and action buttons
+- Action buttons (Mark/Reopen, Edit, Add Blocker, Log, Delete) live in a single `flexWrap` row; the "⚠ N checklist items remaining" warning renders as its own full-width line above that row so Mark and Edit stay on the same row
 
 ## Data Model
 

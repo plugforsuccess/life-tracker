@@ -4,12 +4,12 @@ import ReactDOM from 'react-dom/client'
 function showError(err) {
   const root = document.getElementById('root');
   root.innerHTML = `
-    <div style="min-height:100vh;background:#0a0a0f;color:#e8e8f0;display:flex;align-items:center;justify-content:center;font-family:'DM Mono',monospace;padding:20px">
+    <div style="min-height:100vh;background:#0a0a0f;color:#e8e8f0;display:flex;align-items:center;justify-content:center;font-family:'Inter',sans-serif;padding:20px">
       <div style="text-align:center;max-width:480px">
         <p style="font-size:11px;letter-spacing:4px;color:#7c6af7;margin-bottom:12px">LIFE COMMAND CENTER</p>
         <p style="font-size:16px;margin-bottom:16px">Something went wrong</p>
         <p style="font-size:12px;color:#5a5a7a;line-height:1.6;word-break:break-word">${String(err)}</p>
-        <button onclick="location.reload()" style="margin-top:20px;padding:10px 24px;border-radius:8px;background:#7c6af7;border:none;color:#fff;font-family:'DM Mono',monospace;font-size:12px;letter-spacing:2px;cursor:pointer">RELOAD</button>
+        <button onclick="location.reload()" style="margin-top:20px;padding:10px 24px;border-radius:8px;background:#7c6af7;border:none;color:#fff;font-family:'Inter',sans-serif;font-size:12px;letter-spacing:2px;cursor:pointer">RELOAD</button>
       </div>
     </div>`;
 }
