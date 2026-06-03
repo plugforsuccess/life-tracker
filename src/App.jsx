@@ -1498,6 +1498,7 @@ export default function TaskTracker() {
                     color: isResolved ? G.muted : G.text,
                   }}>
                     {task.title}
+                    {isBlocked && <span style={{ marginLeft:"6px", fontSize:"13px", lineHeight:1 }}>🔒</span>}
                   </span>
                   {expanded && (
                     <button
@@ -1521,7 +1522,6 @@ export default function TaskTracker() {
                   <span style={dyn.catTag(task.category)}>{task.category}</span>
                   <span style={dyn.chip(s.color)}>{s.label}</span>
                   {!isResolved && <span style={dyn.chip(p.color)}>{p.label}</span>}
-                  {isBlocked && <span style={{ fontSize:"13px", lineHeight:1 }}>🔒</span>}
                 </div>
 
                 {/* Expanded details */}
@@ -1763,7 +1763,7 @@ export default function TaskTracker() {
                           ↩ Reopen
                         </button>
                       )}
-                      <button type="button" style={dyn.actionBtn(G.accent)} onClick={e => openEdit(task, e)}>✏ Edit</button>
+                      <button type="button" style={dyn.actionBtn(G.accent)} onClick={e => openEdit(task, e)}>Edit</button>
                       <button
                         type="button"
                         style={dyn.actionBtn(G.accent, true)}
@@ -1773,9 +1773,9 @@ export default function TaskTracker() {
                           setBlockerSearch("");
                           setModalMode("blocker");
                         }}>
-                        🔒 {(task.blocked_by || []).length > 0 ? `Blockers (${(task.blocked_by || []).length})` : "Add Blocker"}
+                        {(task.blocked_by || []).length > 0 ? `Blockers (${(task.blocked_by || []).length})` : "Add Blocker"}
                       </button>
-                      <button type="button" style={dyn.actionBtn("#38bdf8")} onClick={e => openLog(task, e)}>📋 Log ({logCount})</button>
+                      <button type="button" style={dyn.actionBtn("#38bdf8")} onClick={e => openLog(task, e)}>Log ({logCount})</button>
                     </div>
                   </div>
                 )}
