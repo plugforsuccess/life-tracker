@@ -459,6 +459,7 @@ export default function TaskTracker() {
   const [modalMode,  setModalMode]  = useState(null);
   const [editTarget, setEditTarget] = useState(null);  // task being edited
   const [logTarget,  setLogTarget]  = useState(null);  // task whose log is open
+  const [deleteTarget, setDeleteTarget] = useState(null);  // task pending delete confirmation
 
   // Form state
   const [form,       setForm]       = useState(BLANK);
@@ -688,11 +689,12 @@ export default function TaskTracker() {
 
   // ── Delete ──
   async function handleDelete(id, e) {
-    e.stopPropagation();
+    if (e) e.stopPropagation();
     const { error } = await deleteTask(id);
     if (error) { console.error("Failed to delete task:", error); return; }
     setTasks(ts => ts.filter(t => t.id !== id));
     if (expandedId === id) setExpandedId(null);
+    setDeleteTarget(null);
   }
 
   // ── Add activity log note ──
@@ -1363,6 +1365,21 @@ export default function TaskTracker() {
                     {isBlocked && <span style={{ color:"#ff4444", marginRight:"6px" }}>🔒</span>}
                     {task.title}
                   </span>
+                  {expanded && (
+                    <button
+                      type="button"
+                      aria-label="Delete task"
+                      onClick={e => { e.stopPropagation(); setDeleteTarget(task); }}
+                      style={{
+                        flexShrink: 0, width: "24px", height: "24px", lineHeight: 1,
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        borderRadius: "6px", border: `1px solid ${G.border}`,
+                        background: "transparent", color: G.muted,
+                        fontSize: "16px", cursor: "pointer", padding: 0,
+                      }}>
+                      ✕
+                    </button>
+                  )}
                 </div>
 
                 {/* Type + status + priority row */}
@@ -1626,7 +1643,6 @@ export default function TaskTracker() {
                         🔒 {(task.blocked_by || []).length > 0 ? `Blockers (${(task.blocked_by || []).length})` : "Add Blocker"}
                       </button>
                       <button type="button" style={dyn.actionBtn("#38bdf8")} onClick={e => openLog(task, e)}>📋 Log ({logCount})</button>
-                      <button type="button" style={dyn.actionBtn("#ff4444", true)} onClick={e => handleDelete(task.id, e)}>Delete</button>
                     </div>
                   </div>
                 )}
@@ -2495,6 +2511,27 @@ export default function TaskTracker() {
             </div>
             <div style={{ marginTop:"16px", display:"flex", justifyContent:"flex-end" }}>
               <button style={dyn.secondaryBtn} onClick={closeModal}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deleteTarget && (
+        <div style={base.modal} onClick={() => setDeleteTarget(null)}>
+          <div style={base.modalBox} onClick={e => e.stopPropagation()}>
+            <h2 style={{ fontFamily: G.fontDisplay, fontSize:"16px", fontWeight:900, margin:"0 0 8px", color: G.text }}>
+              Delete task?
+            </h2>
+            <p style={{ fontSize:"13px", color: G.muted, lineHeight:1.5, margin:"0 0 20px" }}>
+              "{deleteTarget.title}" will be permanently deleted. This can't be undone.
+            </p>
+            <div style={{ display:"flex", gap:"10px" }}>
+              <button style={dyn.secondaryBtn} onClick={() => setDeleteTarget(null)}>Cancel</button>
+              <button
+                style={{ ...dyn.primaryBtn, background:"#ff4444" }}
+                onClick={() => handleDelete(deleteTarget.id)}>
+                DELETE
+              </button>
             </div>
           </div>
         </div>
