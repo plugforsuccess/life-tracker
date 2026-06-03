@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { supabase } from "./lib/supabase";
+import { supabase, fetchEvents, addEvent, updateEvent, deleteEvent } from "./lib/supabase";
 
 // ─── SUPABASE DATA LAYER ─────────────────────────────────────────────────────
 
@@ -99,6 +99,15 @@ const LOG_NOTE_MAX = 280;
 
 function now() { return new Date().toISOString(); }
 function logEntry(text, type = "system") { return { timestamp: now(), text, type, starred: false }; }
+
+// Local-time YYYY-MM-DD — never use toISOString() for calendar dates (it shifts
+// the day across timezones). due_date and event_date are 'YYYY-MM-DD' strings.
+function localDateStr(d = new Date()) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
 
 // ─── THEMES ─────────────────────────────────────────────────────────────────
 const THEMES = {
@@ -374,6 +383,7 @@ function computeAnalytics(tasks) {
 
 // ─── BLANK FORM STATE ─────────────────────────────────────────────────────────
 const BLANK = { title:"", category:"Business", status:"broke", priority:"medium", due_date:"", notes:"", blocked_by:[], checklist:[], log_checklist_items: false };
+const BLANK_EVENT = { title:"", event_date:"", all_day:true, start_time:"", end_time:"", category:"Personal", location:"", notes:"", recurrence:"none" };
 
 // ─── APP ─────────────────────────────────────────────────────────────────────
 export default function TaskTracker() {
@@ -397,6 +407,8 @@ export default function TaskTracker() {
   const [showReport,     setShowReport]     = useState(false);
   const [reportKey,      setReportKey]      = useState(0);
   const [copyReportConfirm, setCopyReportConfirm] = useState(false);
+  const [showCalendar,   setShowCalendar]   = useState(false);
+  const [events,         setEvents]         = useState([]);
 
   // ─── DESIGN TOKENS (reactive) ──────────────────────────────────────────────
   const G = THEMES[themeKey];
@@ -455,11 +467,17 @@ export default function TaskTracker() {
     return { label: `DUE ${due.toLocaleDateString("en-US", { month:"short", day:"numeric" })}`, color: G.muted };
   }
 
-  // Modal modes: null | "add" | "edit" | "log" | "theme" | "blocker"
+  // Modal modes: null | "add" | "edit" | "log" | "theme" | "blocker" | "event"
   const [modalMode,  setModalMode]  = useState(null);
   const [editTarget, setEditTarget] = useState(null);  // task being edited
   const [logTarget,  setLogTarget]  = useState(null);  // task whose log is open
   const [deleteTarget, setDeleteTarget] = useState(null);  // task pending delete confirmation
+
+  // Event modal state (calendar)
+  const [eventForm,   setEventForm]   = useState(BLANK_EVENT);
+  const [eventTarget, setEventTarget] = useState(null);  // event being edited (null = new)
+  const [eventError,  setEventError]  = useState("");
+  const [eventSaving, setEventSaving] = useState(false);
 
   // Form state
   const [form,       setForm]       = useState(BLANK);
@@ -496,11 +514,15 @@ export default function TaskTracker() {
 
   useEffect(() => {
     loadTasks();
+    loadEvents();
 
     const channel = supabase
       .channel("tasks-realtime")
       .on("postgres_changes", { event: "*", schema: "public", table: "tasks" }, () => {
         loadTasks();
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "events" }, () => {
+        loadEvents();
       })
       .subscribe((status, err) => {
         if (err) console.error("Realtime subscription error:", err);
@@ -515,6 +537,12 @@ export default function TaskTracker() {
     if (error) console.error("Failed to load tasks:", error);
     setTasks(data || []);
     setLoading(false);
+  }
+
+  async function loadEvents() {
+    const { data, error } = await fetchEvents();
+    if (error) console.error("Failed to load events:", error);
+    setEvents(data || []);
   }
 
   // ── Field helpers ──
@@ -553,6 +581,14 @@ export default function TaskTracker() {
     setModalDragState(null);
     setModalMode("add");
   }
+  // Add-task flow pre-filled with a due date (used by the calendar's "+ Add for this day")
+  function openAddOnDate(dateStr) {
+    setForm({ ...BLANK, due_date: dateStr || "" });
+    setAiPrompt(""); setAiError(""); setFormError(""); setSaving(false);
+    setNewChecklist([]); setNewChecklistItem(""); setNewLogChecklistItems(false);
+    setModalDragState(null);
+    setModalMode("add");
+  }
   function openEdit(task, e) {
     e.stopPropagation();
     setEditTarget(task);
@@ -577,6 +613,67 @@ export default function TaskTracker() {
     setNewLogNote("");
     setModalMode("log");
   }
+
+  // ── Event modal (calendar) ──
+  const setEF = (key, val) => setEventForm(f => ({ ...f, [key]: val }));
+  function openAddEvent(dateStr) {
+    setEventTarget(null);
+    setEventForm({ ...BLANK_EVENT, event_date: dateStr || localDateStr() });
+    setEventError(""); setEventSaving(false);
+    setModalMode("event");
+  }
+  function openEditEvent(ev) {
+    setEventTarget(ev);
+    setEventForm({
+      title:      ev.title || "",
+      event_date: ev.event_date || "",
+      all_day:    ev.all_day !== false,
+      start_time: ev.start_time ? ev.start_time.slice(0, 5) : "",
+      end_time:   ev.end_time ? ev.end_time.slice(0, 5) : "",
+      category:   ev.category || "Personal",
+      location:   ev.location || "",
+      notes:      ev.notes || "",
+      recurrence: ev.recurrence || "none",
+    });
+    setEventError(""); setEventSaving(false);
+    setModalMode("event");
+  }
+  async function handleSaveEvent() {
+    if (!eventForm.title.trim())  { setEventError("Event title is required."); return; }
+    if (!eventForm.event_date)    { setEventError("Event date is required."); return; }
+    setEventError(""); setEventSaving(true);
+    const payload = {
+      title:      eventForm.title.trim(),
+      event_date: eventForm.event_date,
+      all_day:    eventForm.all_day,
+      start_time: eventForm.all_day ? null : (eventForm.start_time || null),
+      end_time:   eventForm.all_day ? null : (eventForm.end_time || null),
+      category:   eventForm.category,
+      location:   eventForm.location.trim() || null,
+      notes:      eventForm.notes.trim() || null,
+      recurrence: eventForm.recurrence,
+    };
+    try {
+      if (eventTarget) {
+        const { error } = await updateEvent(eventTarget.id, payload);
+        if (error) { setEventError(error.message || "Failed to save event."); setEventSaving(false); return; }
+        setEvents(es => es.map(e => e.id === eventTarget.id ? { ...e, ...payload } : e));
+      } else {
+        const { data, error } = await addEvent(payload);
+        if (error) { setEventError(error.message || "Failed to add event."); setEventSaving(false); return; }
+        setEvents(es => [...es, data]);
+      }
+      closeModal();
+    } catch (err) { setEventError(err.message || "Something went wrong."); setEventSaving(false); }
+  }
+  async function handleDeleteEvent() {
+    if (!eventTarget) return;
+    const { error } = await deleteEvent(eventTarget.id);
+    if (error) { console.error("Failed to delete event:", error); return; }
+    setEvents(es => es.filter(e => e.id !== eventTarget.id));
+    closeModal();
+  }
+
   function closeModal() {
     setModalMode(null); setEditTarget(null); setLogTarget(null);
     setForm(BLANK); setAiPrompt(""); setAiError(""); setNewLogNote("");
@@ -586,6 +683,7 @@ export default function TaskTracker() {
     setBlockerSectionOpen(false); setBlockerSearch("");
     setBlockerTarget(null); setBlockerPickerNewSelection(null); setBlockerPickerReason("");
     setModalDragState(null);
+    setEventTarget(null); setEventForm(BLANK_EVENT); setEventError(""); setEventSaving(false);
   }
 
   // ── AI auto-fill ──
@@ -1030,12 +1128,41 @@ export default function TaskTracker() {
             alignItems: "center",
             gap: "6px",
           }}>
+            {/* Calendar button */}
+            <button
+              onClick={() => {
+                setShowCalendar(v => {
+                  const next = !v;
+                  if (next) setShowReport(false);
+                  return next;
+                });
+              }}
+              style={{
+                background: showCalendar ? `${G.accent}22` : "transparent",
+                border: `1px solid ${showCalendar ? G.accent : G.border}`,
+                borderRadius: "6px",
+                padding: "5px 10px",
+                fontSize: "10px",
+                letterSpacing: "1.5px",
+                fontFamily: G.font,
+                cursor: "pointer",
+                color: showCalendar ? G.accent : G.muted,
+                display: "flex",
+                alignItems: "center",
+                gap: "5px",
+                whiteSpace: "nowrap",
+              }}>
+              <span style={{ fontSize: "13px" }}>📅</span>
+              <span>CALENDAR</span>
+            </button>
+
             {/* Report button */}
             <button
               onClick={() => {
                 setShowReport(v => {
-                  if (!v) setReportKey(k => k + 1);
-                  return !v;
+                  const next = !v;
+                  if (next) { setReportKey(k => k + 1); setShowCalendar(false); }
+                  return next;
                 });
               }}
               style={{
@@ -1076,7 +1203,7 @@ export default function TaskTracker() {
         </div>
 
         {/* ── Stats ── */}
-        {!showReport && (() => {
+        {!showReport && !showCalendar && (() => {
           const tasksWithChecklists = tasks.filter(t => (t.checklist || []).length > 0);
           const totalItems = tasksWithChecklists.reduce((sum, t) => sum + t.checklist.length, 0);
           const doneItems = tasksWithChecklists.reduce((sum, t) => sum + t.checklist.filter(i => i.done).length, 0);
@@ -1173,7 +1300,7 @@ export default function TaskTracker() {
         })()}
 
         {/* ── Filter toggle bar ── */}
-        {!showReport && (() => {
+        {!showReport && !showCalendar && (() => {
           const hasActiveFilters = priorityFilter !== "all" || catFilter !== "all" || dueFilter !== "all" || filter !== "all" || showResolved || resolvedOnly;
           const activeCount = [priorityFilter !== "all", catFilter !== "all", dueFilter !== "all", filter !== "all", showResolved, resolvedOnly].filter(Boolean).length;
           return (
@@ -1216,7 +1343,7 @@ export default function TaskTracker() {
         })()}
 
         {/* ── Collapsible filter rows ── */}
-        {!showReport && <div style={{
+        {!showReport && !showCalendar && <div style={{
           maxHeight: filtersOpen ? "300px" : "0",
           overflow: "hidden",
           transition: "max-height 0.25s ease",
@@ -1293,6 +1420,14 @@ export default function TaskTracker() {
             setReportKey={setReportKey}
             copyReportConfirm={copyReportConfirm}
             setCopyReportConfirm={setCopyReportConfirm}
+          />
+        ) : showCalendar ? (
+          <Calendar
+            tasks={tasks} events={events} G={G} dyn={dyn} base={base}
+            onTaskClick={(id) => { setShowCalendar(false); setExpandedId(id); }}
+            onAddTaskOnDate={(d) => openAddOnDate(d)}
+            onAddEventOnDate={(d) => openAddEvent(d)}
+            onEditEvent={(ev) => openEditEvent(ev)}
           />
         ) : (
         <div style={base.taskList}>
@@ -2469,6 +2604,88 @@ export default function TaskTracker() {
         </div>
       )}
 
+      {/* ══ EVENT ADD / EDIT MODAL ══ */}
+      {modalMode === "event" && (
+        <div style={base.modal} onClick={closeModal}>
+          <div style={base.modalBox} onClick={e => e.stopPropagation()}>
+            <h2 style={{ fontFamily: G.fontDisplay, fontSize: "18px", fontWeight: 900, margin: "0 0 20px", color: G.text, letterSpacing: "-0.5px" }}>
+              {eventTarget ? "EDIT EVENT" : "NEW EVENT"}
+            </h2>
+
+            <label style={base.label}>Title</label>
+            <input style={base.input} value={eventForm.title} placeholder="Event title"
+              onChange={e => setEF("title", e.target.value)} />
+
+            <label style={base.label}>Date</label>
+            <input type="date" style={base.input} value={eventForm.event_date}
+              onChange={e => setEF("event_date", e.target.value)} />
+
+            <label style={base.label}>Time</label>
+            <div style={{ display: "flex", gap: "8px", marginBottom: eventForm.all_day ? "16px" : "8px" }}>
+              <button type="button" style={dyn.pairOption(eventForm.all_day)}
+                onClick={() => setEF("all_day", true)}>All day</button>
+              <button type="button" style={dyn.pairOption(!eventForm.all_day)}
+                onClick={() => setEF("all_day", false)}>Timed</button>
+            </div>
+            {!eventForm.all_day && (
+              <div style={base.pairsGrid}>
+                <div>
+                  <label style={base.label}>Start</label>
+                  <input type="time" style={base.input} value={eventForm.start_time}
+                    onChange={e => setEF("start_time", e.target.value)} />
+                </div>
+                <div>
+                  <label style={base.label}>End</label>
+                  <input type="time" style={base.input} value={eventForm.end_time}
+                    onChange={e => setEF("end_time", e.target.value)} />
+                </div>
+              </div>
+            )}
+
+            <label style={base.label}>Category</label>
+            <div style={{ display: "flex", gap: "8px", marginBottom: "16px" }}>
+              {["Business", "Personal"].map(c => (
+                <button key={c} type="button" style={dyn.pairOption(eventForm.category === c)}
+                  onClick={() => setEF("category", c)}>{c}</button>
+              ))}
+            </div>
+
+            <label style={base.label}>Location</label>
+            <input style={base.input} value={eventForm.location} placeholder="Optional"
+              onChange={e => setEF("location", e.target.value)} />
+
+            <label style={base.label}>Notes</label>
+            <textarea style={{ ...base.input, minHeight: "64px", resize: "vertical" }} value={eventForm.notes}
+              placeholder="Optional" onChange={e => setEF("notes", e.target.value)} />
+
+            <label style={base.label}>Recurrence</label>
+            <select style={base.select} value={eventForm.recurrence}
+              onChange={e => setEF("recurrence", e.target.value)}>
+              {["none", "daily", "weekly", "monthly", "yearly"].map(r => (
+                <option key={r} value={r}>{r === "none" ? "Does not repeat" : r.charAt(0).toUpperCase() + r.slice(1)}</option>
+              ))}
+            </select>
+
+            {eventError && <p style={{ color: "#ff4444", fontSize: "12px", margin: "0 0 12px" }}>{eventError}</p>}
+
+            <div style={base.modalBtns}>
+              <button type="button" style={dyn.secondaryBtn} onClick={closeModal}>Cancel</button>
+              <button type="button" style={{ ...dyn.primaryBtn, opacity: eventSaving ? 0.6 : 1, cursor: eventSaving ? "not-allowed" : "pointer" }}
+                onClick={handleSaveEvent} disabled={eventSaving}>
+                {eventSaving ? "SAVING…" : eventTarget ? "SAVE EVENT" : "ADD EVENT"}
+              </button>
+            </div>
+            {eventTarget && (
+              <button type="button"
+                style={{ ...dyn.secondaryBtn, width: "100%", marginTop: "10px", color: "#ff4444", borderColor: "#ff444455" }}
+                onClick={handleDeleteEvent}>
+                DELETE EVENT
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* ══ THEME PICKER MODAL ══ */}
       {modalMode === "theme" && (
         <div style={base.modal} onClick={closeModal}>
@@ -2896,6 +3113,202 @@ function CommandReport({ analytics, tasks, G, dyn, base, onTaskClick, onNavigate
         </button>
       </div>
 
+    </div>
+  );
+}
+
+// ─── CALENDAR COMPONENT ─────────────────────────────────────────────────────
+// Month grid (Sun–Sat). Dated tasks (due_date) and events (event_date) auto-appear.
+function Calendar({ tasks, events, G, dyn, base, onTaskClick, onAddTaskOnDate, onAddEventOnDate, onEditEvent }) {
+  const todayStr = localDateStr();
+  const todayObj = new Date();
+  const [viewYear, setViewYear]   = useState(todayObj.getFullYear());
+  const [viewMonth, setViewMonth] = useState(todayObj.getMonth());   // 0–11
+  const [selectedDate, setSelectedDate] = useState(todayStr);
+
+  const TASK_DOT  = "#38bdf8";   // matches the "due" filter accent
+  const BIZ_COLOR = "#7c6af7";   // matches catTag Business
+  const PERS_COLOR = "#ff8c42";  // matches catTag Personal
+
+  // Index tasks/events by their local date string
+  const tasksByDate = {};
+  for (const t of tasks) {
+    if (t.due_date) (tasksByDate[t.due_date] ||= []).push(t);
+  }
+  const eventsByDate = {};
+  for (const ev of events) {
+    if (ev.event_date) (eventsByDate[ev.event_date] ||= []).push(ev);
+  }
+
+  const monthLabel = new Date(viewYear, viewMonth, 1)
+    .toLocaleDateString("en-US", { month: "long", year: "numeric" });
+
+  function shiftMonth(delta) {
+    let m = viewMonth + delta;
+    let y = viewYear;
+    if (m < 0)  { m = 11; y -= 1; }
+    if (m > 11) { m = 0;  y += 1; }
+    setViewMonth(m); setViewYear(y);
+  }
+  function goToday() {
+    setViewYear(todayObj.getFullYear());
+    setViewMonth(todayObj.getMonth());
+    setSelectedDate(todayStr);
+  }
+
+  // Build the grid cells (leading blanks + days, padded to full weeks)
+  const startWeekday = new Date(viewYear, viewMonth, 1).getDay();      // 0=Sun
+  const daysInMonth  = new Date(viewYear, viewMonth + 1, 0).getDate();
+  const cells = [];
+  for (let i = 0; i < startWeekday; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) {
+    cells.push(`${viewYear}-${String(viewMonth + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`);
+  }
+  while (cells.length % 7 !== 0) cells.push(null);
+
+  const selTasks  = (selectedDate && tasksByDate[selectedDate])  || [];
+  const selEvents = (selectedDate && eventsByDate[selectedDate]) || [];
+  const selLabel  = selectedDate
+    ? new Date(selectedDate + "T00:00:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })
+    : "";
+
+  const fmtEventTime = (ev) => {
+    if (ev.all_day !== false && !ev.start_time) return "All day";
+    const s = ev.start_time ? ev.start_time.slice(0, 5) : "";
+    const e = ev.end_time ? ev.end_time.slice(0, 5) : "";
+    return e ? `${s}–${e}` : s || "All day";
+  };
+
+  const navBtn = {
+    background: "transparent", border: `1px solid ${G.border}`, borderRadius: "6px",
+    color: G.text, fontFamily: G.font, fontSize: "16px", lineHeight: 1,
+    width: "32px", height: "32px", cursor: "pointer", flexShrink: 0,
+  };
+
+  return (
+    <div style={{ padding: "16px 20px 24px" }}>
+
+      {/* Month nav */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "14px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <button style={navBtn} onClick={() => shiftMonth(-1)} aria-label="Previous month">‹</button>
+          <button style={navBtn} onClick={() => shiftMonth(1)} aria-label="Next month">›</button>
+        </div>
+        <h2 style={{ fontFamily: G.fontDisplay, fontSize: "18px", fontWeight: 900, margin: 0, color: G.text, letterSpacing: "-0.5px" }}>
+          {monthLabel}
+        </h2>
+        <button style={{ ...dyn.filterBtn(false, G.accent), border: `1px solid ${G.border}` }} onClick={goToday}>
+          Today
+        </button>
+      </div>
+
+      {/* Weekday header */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: "4px", marginBottom: "4px" }}>
+        {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map(d => (
+          <div key={d} style={{ textAlign: "center", fontSize: "9px", letterSpacing: "1px", color: G.muted, fontFamily: G.font, fontWeight: 600, padding: "4px 0" }}>
+            {d.toUpperCase()}
+          </div>
+        ))}
+      </div>
+
+      {/* Day grid */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: "4px" }}>
+        {cells.map((dateStr, i) => {
+          if (!dateStr) return <div key={`b${i}`} />;
+          const dayNum   = Number(dateStr.slice(8, 10));
+          const isToday  = dateStr === todayStr;
+          const isSel    = dateStr === selectedDate;
+          const dayTasks  = tasksByDate[dateStr] || [];
+          const dayEvents = eventsByDate[dateStr] || [];
+          const hasBizEvent  = dayEvents.some(e => e.category === "Business");
+          const hasPersEvent = dayEvents.some(e => e.category !== "Business");
+          return (
+            <button
+              key={dateStr}
+              onClick={() => setSelectedDate(dateStr)}
+              style={{
+                aspectRatio: "1 / 1",
+                display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "3px",
+                background: isSel ? `${G.accent}22` : "transparent",
+                border: `1px solid ${isSel ? G.accent : isToday ? `${G.accent}66` : G.border}`,
+                borderRadius: "8px", cursor: "pointer", fontFamily: G.font,
+                color: isSel ? G.accent : G.text,
+                WebkitTapHighlightColor: "transparent", padding: 0,
+              }}>
+              <span style={{ fontSize: "13px", fontWeight: isToday || isSel ? 800 : 500 }}>{dayNum}</span>
+              <span style={{ display: "flex", gap: "3px", height: "5px", alignItems: "center" }}>
+                {dayTasks.length > 0 && <span style={{ width: "5px", height: "5px", borderRadius: "50%", background: TASK_DOT }} />}
+                {hasBizEvent && <span style={{ width: "5px", height: "5px", borderRadius: "50%", background: BIZ_COLOR }} />}
+                {hasPersEvent && <span style={{ width: "5px", height: "5px", borderRadius: "50%", background: PERS_COLOR }} />}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Legend */}
+      <div style={{ display: "flex", gap: "14px", justifyContent: "center", margin: "14px 0 4px", fontSize: "9px", letterSpacing: "0.5px", color: G.muted, fontFamily: G.font }}>
+        <span style={{ display: "flex", alignItems: "center", gap: "5px" }}><span style={{ width: "6px", height: "6px", borderRadius: "50%", background: TASK_DOT }} />Tasks</span>
+        <span style={{ display: "flex", alignItems: "center", gap: "5px" }}><span style={{ width: "6px", height: "6px", borderRadius: "50%", background: BIZ_COLOR }} />Business</span>
+        <span style={{ display: "flex", alignItems: "center", gap: "5px" }}><span style={{ width: "6px", height: "6px", borderRadius: "50%", background: PERS_COLOR }} />Personal</span>
+      </div>
+
+      {/* Selected day agenda */}
+      {selectedDate && (
+        <div style={{ marginTop: "16px", borderTop: `1px solid ${G.border}`, paddingTop: "16px" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px" }}>
+            <h3 style={{ fontFamily: G.fontDisplay, fontSize: "15px", fontWeight: 900, margin: 0, color: G.text }}>{selLabel}</h3>
+          </div>
+
+          {selTasks.length === 0 && selEvents.length === 0 && (
+            <p style={{ color: G.muted, fontSize: "12px", margin: "0 0 12px", fontFamily: G.font }}>Nothing scheduled.</p>
+          )}
+
+          {selEvents.map(ev => {
+            const c = ev.category === "Business" ? BIZ_COLOR : PERS_COLOR;
+            return (
+              <div key={ev.id} onClick={() => onEditEvent(ev)}
+                style={{ background: G.surface, border: `1px solid ${G.border}`, borderLeft: `3px solid ${c}`, borderRadius: "8px", padding: "12px 14px", marginBottom: "8px", cursor: "pointer" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
+                  <span style={{ fontSize: "13px", fontWeight: 600, color: G.text, fontFamily: G.font }}>{ev.title}</span>
+                  <span style={dyn.chip(c)}>EVENT</span>
+                </div>
+                <div style={{ display: "flex", gap: "10px", marginTop: "5px", fontSize: "11px", color: G.muted, fontFamily: G.font }}>
+                  <span>{fmtEventTime(ev)}</span>
+                  {ev.location && <span>· {ev.location}</span>}
+                  {ev.recurrence && ev.recurrence !== "none" && <span>· repeats {ev.recurrence}</span>}
+                </div>
+              </div>
+            );
+          })}
+
+          {selTasks.map(t => {
+            const s = STATUS_MAP[t.status];
+            return (
+              <div key={t.id} onClick={() => onTaskClick(t.id)}
+                style={{ background: G.surface, border: `1px solid ${G.border}`, borderLeft: `3px solid ${s?.color || G.muted}`, borderRadius: "8px", padding: "12px 14px", marginBottom: "8px", cursor: "pointer" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
+                  <span style={{ fontSize: "13px", fontWeight: 600, color: G.text, fontFamily: G.font }}>{t.title}</span>
+                  <span style={dyn.chip(s?.color || G.muted)}>{(s?.label) || t.status.toUpperCase()}</span>
+                </div>
+                <div style={{ marginTop: "5px" }}>
+                  <span style={dyn.catTag(t.category)}>{t.category}</span>
+                </div>
+              </div>
+            );
+          })}
+
+          {/* Add for this day */}
+          <div style={{ display: "flex", gap: "8px", marginTop: "12px" }}>
+            <button style={{ ...dyn.actionBtn(G.accent), flex: 1, padding: "10px" }} onClick={() => onAddTaskOnDate(selectedDate)}>
+              + Add task
+            </button>
+            <button style={{ ...dyn.actionBtn(G.accent), flex: 1, padding: "10px" }} onClick={() => onAddEventOnDate(selectedDate)}>
+              + Add event
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
