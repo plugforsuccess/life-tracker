@@ -1362,8 +1362,8 @@ export default function TaskTracker() {
                     textDecoration: isResolved ? "line-through" : "none",
                     color: isResolved ? G.muted : G.text,
                   }}>
-                    {isBlocked && <span style={{ color:"#ff4444", marginRight:"6px" }}>🔒</span>}
                     {task.title}
+                    {isBlocked && <span style={{ marginLeft:"6px" }}>🔒</span>}
                   </span>
                   {expanded && (
                     <button
