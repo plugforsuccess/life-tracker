@@ -109,6 +109,27 @@ function localDateStr(d = new Date()) {
   return `${y}-${m}-${day}`;
 }
 
+// Does a one-off or recurring event fall on the given 'YYYY-MM-DD' date?
+// Recurrence is virtual (no rows generated) — events repeat from event_date forward.
+function eventOccursOn(ev, dateStr) {
+  if (!ev || !ev.event_date) return false;
+  if (ev.event_date === dateStr) return true;
+  const rec = ev.recurrence || "none";
+  if (rec === "none") return false;
+  if (dateStr < ev.event_date) return false;   // lexical compare is valid for YYYY-MM-DD
+  const start = new Date(ev.event_date + "T00:00:00");
+  const d     = new Date(dateStr + "T00:00:00");
+  if (rec === "daily")  return true;
+  if (rec === "weekly") return start.getDay() === d.getDay();
+  if (rec === "monthly") {
+    // Match day-of-month, clamped to month end (e.g. the 31st lands on Feb 28)
+    const lastDom = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+    return d.getDate() === Math.min(start.getDate(), lastDom);
+  }
+  if (rec === "yearly") return start.getDate() === d.getDate() && start.getMonth() === d.getMonth();
+  return false;
+}
+
 // ─── THEMES ─────────────────────────────────────────────────────────────────
 const THEMES = {
   midnight: {
@@ -672,6 +693,25 @@ export default function TaskTracker() {
     if (error) { console.error("Failed to delete event:", error); return; }
     setEvents(es => es.filter(e => e.id !== eventTarget.id));
     closeModal();
+  }
+
+  // ── Calendar drag-to-reschedule ──
+  async function handleRescheduleTask(taskId, dateStr) {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task || task.due_date === dateStr) return;
+    const newLog = [...(task.activity_log || []), logEntry(`Due date moved to ${dateStr}`)];
+    const patch = { due_date: dateStr, activity_log: newLog };
+    const { error } = await updateTask(taskId, patch);
+    if (error) { console.error("Failed to reschedule task:", error); return; }
+    setTasks(ts => ts.map(t => t.id === taskId ? { ...t, ...patch } : t));
+  }
+  async function handleRescheduleEvent(eventId, dateStr) {
+    const ev = events.find(e => e.id === eventId);
+    if (!ev || ev.event_date === dateStr) return;
+    const patch = { event_date: dateStr };
+    const { error } = await updateEvent(eventId, patch);
+    if (error) { console.error("Failed to reschedule event:", error); return; }
+    setEvents(es => es.map(e => e.id === eventId ? { ...e, ...patch } : e));
   }
 
   function closeModal() {
@@ -1428,6 +1468,8 @@ export default function TaskTracker() {
             onAddTaskOnDate={(d) => openAddOnDate(d)}
             onAddEventOnDate={(d) => openAddEvent(d)}
             onEditEvent={(ev) => openEditEvent(ev)}
+            onRescheduleTask={handleRescheduleTask}
+            onRescheduleEvent={handleRescheduleEvent}
           />
         ) : (
         <div style={base.taskList}>
@@ -3118,34 +3160,36 @@ function CommandReport({ analytics, tasks, G, dyn, base, onTaskClick, onNavigate
 }
 
 // ─── CALENDAR COMPONENT ─────────────────────────────────────────────────────
-// Month grid (Sun–Sat). Dated tasks (due_date) and events (event_date) auto-appear.
-function Calendar({ tasks, events, G, dyn, base, onTaskClick, onAddTaskOnDate, onAddEventOnDate, onEditEvent }) {
+// Month grid + agenda. Dated tasks (due_date) and events (event_date, incl.
+// virtual recurrence) auto-appear. Drag an item onto a day to reschedule.
+function Calendar({ tasks, events, G, dyn, base, onTaskClick, onAddTaskOnDate, onAddEventOnDate, onEditEvent, onRescheduleTask, onRescheduleEvent }) {
   const todayStr = localDateStr();
   const todayObj = new Date();
   const [viewYear, setViewYear]   = useState(todayObj.getFullYear());
   const [viewMonth, setViewMonth] = useState(todayObj.getMonth());   // 0–11
   const [selectedDate, setSelectedDate] = useState(todayStr);
+  const [calMode, setCalMode] = useState("month");          // "month" | "agenda"
+  const [overdueOpen, setOverdueOpen] = useState(true);
+  const [dragItem, setDragItem] = useState(null);           // { type:'task'|'event', id }
+  const [dragOverDate, setDragOverDate] = useState(null);
 
   const TASK_DOT  = "#38bdf8";   // matches the "due" filter accent
   const BIZ_COLOR = "#7c6af7";   // matches catTag Business
   const PERS_COLOR = "#ff8c42";  // matches catTag Personal
 
-  // Index tasks/events by their local date string
-  const tasksByDate = {};
-  for (const t of tasks) {
-    if (t.due_date) (tasksByDate[t.due_date] ||= []).push(t);
-  }
-  const eventsByDate = {};
-  for (const ev of events) {
-    if (ev.event_date) (eventsByDate[ev.event_date] ||= []).push(ev);
-  }
+  const tasksOnDate  = (dateStr) => tasks.filter(t => t.due_date === dateStr);
+  const eventsOnDate = (dateStr) => events.filter(ev => eventOccursOn(ev, dateStr));
+
+  // Overdue = active task (non-terminal status) due before today
+  const overdueTasks = tasks
+    .filter(t => t.due_date && t.due_date < todayStr && STATUS_MAP[t.status]?.next)
+    .sort((a, b) => (a.due_date < b.due_date ? -1 : 1));
 
   const monthLabel = new Date(viewYear, viewMonth, 1)
     .toLocaleDateString("en-US", { month: "long", year: "numeric" });
 
   function shiftMonth(delta) {
-    let m = viewMonth + delta;
-    let y = viewYear;
+    let m = viewMonth + delta, y = viewYear;
     if (m < 0)  { m = 11; y -= 1; }
     if (m > 11) { m = 0;  y += 1; }
     setViewMonth(m); setViewYear(y);
@@ -3154,10 +3198,105 @@ function Calendar({ tasks, events, G, dyn, base, onTaskClick, onAddTaskOnDate, o
     setViewYear(todayObj.getFullYear());
     setViewMonth(todayObj.getMonth());
     setSelectedDate(todayStr);
+    setCalMode("month");
+  }
+  function doReschedule(item, dateStr) {
+    if (!item || !dateStr) return;
+    if (item.type === "task") onRescheduleTask(item.id, dateStr);
+    else onRescheduleEvent(item.id, dateStr);
+    setSelectedDate(dateStr);
+    setDragItem(null); setDragOverDate(null);
   }
 
-  // Build the grid cells (leading blanks + days, padded to full weeks)
-  const startWeekday = new Date(viewYear, viewMonth, 1).getDay();      // 0=Sun
+  const fmtEventTime = (ev) => {
+    if (ev.all_day !== false && !ev.start_time) return "All day";
+    const s = ev.start_time ? ev.start_time.slice(0, 5) : "";
+    const e = ev.end_time ? ev.end_time.slice(0, 5) : "";
+    return e ? `${s}–${e}` : s || "All day";
+  };
+
+  const rowCard = (c) => ({
+    background: G.surface, border: `1px solid ${G.border}`, borderLeft: `3px solid ${c}`,
+    borderRadius: "8px", padding: "12px 14px", marginBottom: "8px", cursor: "pointer",
+  });
+  const titleStyle = { fontSize: "13px", fontWeight: 600, color: G.text, fontFamily: G.font };
+  const metaStyle  = { display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "5px", fontSize: "11px", color: G.muted, fontFamily: G.font };
+
+  // Drag handle: HTML5 DnD (desktop) + touch (iOS). Plain element (not a nested
+  // component) so re-renders never interrupt an in-flight drag.
+  function dragHandle(type, id) {
+    return (
+      <span
+        draggable
+        onClick={(e) => e.stopPropagation()}
+        onDragStart={() => setDragItem({ type, id })}
+        onDragEnd={() => { setDragItem(null); setDragOverDate(null); }}
+        onTouchStart={(e) => { e.stopPropagation(); setDragItem({ type, id }); }}
+        onTouchMove={(e) => {
+          e.preventDefault();
+          const t = e.touches[0];
+          const el = document.elementFromPoint(t.clientX, t.clientY);
+          const cell = el && el.closest ? el.closest("[data-cal-date]") : null;
+          setDragOverDate(cell ? cell.getAttribute("data-cal-date") : null);
+        }}
+        onTouchEnd={(e) => {
+          e.stopPropagation();
+          if (dragItem && dragOverDate) doReschedule(dragItem, dragOverDate);
+          else { setDragItem(null); setDragOverDate(null); }
+        }}
+        title="Drag onto a day to reschedule"
+        style={{ cursor: "grab", color: G.muted, fontSize: "15px", paddingRight: "8px", touchAction: "none", lineHeight: 1, userSelect: "none", WebkitUserSelect: "none" }}
+      >⠿</span>
+    );
+  }
+
+  function renderEvent(ev, draggable) {
+    const c = ev.category === "Business" ? BIZ_COLOR : PERS_COLOR;
+    const recurring = ev.recurrence && ev.recurrence !== "none";
+    return (
+      <div key={`e-${ev.id}`} onClick={() => onEditEvent(ev)} style={{ ...rowCard(c), display: "flex", alignItems: "center" }}>
+        {draggable && dragHandle("event", ev.id)}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
+            <span style={titleStyle}>{ev.title}</span>
+            <span style={dyn.chip(c)}>EVENT</span>
+          </div>
+          <div style={metaStyle}>
+            <span>{fmtEventTime(ev)}</span>
+            {ev.location && <span>· {ev.location}</span>}
+            {recurring && <span>· ↻ repeats {ev.recurrence}</span>}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  function renderTask(t, draggable, showDue) {
+    const s = STATUS_MAP[t.status];
+    const overdue = t.due_date && t.due_date < todayStr && s?.next;
+    return (
+      <div key={`t-${t.id}`} onClick={() => onTaskClick(t.id)} style={{ ...rowCard(overdue ? "#ff4444" : (s?.color || G.muted)), display: "flex", alignItems: "center" }}>
+        {draggable && dragHandle("task", t.id)}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
+            <span style={titleStyle}>{t.title}</span>
+            <span style={dyn.chip(s?.color || G.muted)}>{(s?.label) || t.status.toUpperCase()}</span>
+          </div>
+          <div style={{ ...metaStyle, alignItems: "center" }}>
+            <span style={dyn.catTag(t.category)}>{t.category}</span>
+            {showDue && t.due_date && (
+              <span style={{ color: overdue ? "#ff4444" : G.muted, fontWeight: overdue ? 700 : 400 }}>
+                {overdue ? "OVERDUE" : "DUE"} {new Date(t.due_date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Build the month grid cells (leading blanks + days, padded to full weeks)
+  const startWeekday = new Date(viewYear, viewMonth, 1).getDay();
   const daysInMonth  = new Date(viewYear, viewMonth + 1, 0).getDate();
   const cells = [];
   for (let i = 0; i < startWeekday; i++) cells.push(null);
@@ -3166,18 +3305,21 @@ function Calendar({ tasks, events, G, dyn, base, onTaskClick, onAddTaskOnDate, o
   }
   while (cells.length % 7 !== 0) cells.push(null);
 
-  const selTasks  = (selectedDate && tasksByDate[selectedDate])  || [];
-  const selEvents = (selectedDate && eventsByDate[selectedDate]) || [];
+  const selTasks  = selectedDate ? tasksOnDate(selectedDate)  : [];
+  const selEvents = selectedDate ? eventsOnDate(selectedDate) : [];
   const selLabel  = selectedDate
     ? new Date(selectedDate + "T00:00:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })
     : "";
 
-  const fmtEventTime = (ev) => {
-    if (ev.all_day !== false && !ev.start_time) return "All day";
-    const s = ev.start_time ? ev.start_time.slice(0, 5) : "";
-    const e = ev.end_time ? ev.end_time.slice(0, 5) : "";
-    return e ? `${s}–${e}` : s || "All day";
-  };
+  // Agenda view: next 21 days that have anything scheduled
+  const upcomingDays = [];
+  for (let i = 0; i < 21; i++) {
+    const d  = new Date(todayObj.getFullYear(), todayObj.getMonth(), todayObj.getDate() + i);
+    const ds = localDateStr(d);
+    const evs = eventsOnDate(ds);
+    const tks = tasksOnDate(ds);
+    if (evs.length || tks.length) upcomingDays.push({ ds, d, evs, tks });
+  }
 
   const navBtn = {
     background: "transparent", border: `1px solid ${G.border}`, borderRadius: "6px",
@@ -3188,125 +3330,150 @@ function Calendar({ tasks, events, G, dyn, base, onTaskClick, onAddTaskOnDate, o
   return (
     <div style={{ padding: "16px 20px 24px" }}>
 
-      {/* Month nav */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "14px" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <button style={navBtn} onClick={() => shiftMonth(-1)} aria-label="Previous month">‹</button>
-          <button style={navBtn} onClick={() => shiftMonth(1)} aria-label="Next month">›</button>
-        </div>
-        <h2 style={{ fontFamily: G.fontDisplay, fontSize: "18px", fontWeight: 900, margin: 0, color: G.text, letterSpacing: "-0.5px" }}>
-          {monthLabel}
-        </h2>
-        <button style={{ ...dyn.filterBtn(false, G.accent), border: `1px solid ${G.border}` }} onClick={goToday}>
-          Today
-        </button>
+      {/* Mode toggle */}
+      <div style={{ display: "flex", gap: "6px", marginBottom: "14px", justifyContent: "center" }}>
+        <button style={dyn.filterBtn(calMode === "month", G.accent)} onClick={() => setCalMode("month")}>Month</button>
+        <button style={dyn.filterBtn(calMode === "agenda", G.accent)} onClick={() => setCalMode("agenda")}>Agenda</button>
       </div>
 
-      {/* Weekday header */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: "4px", marginBottom: "4px" }}>
-        {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map(d => (
-          <div key={d} style={{ textAlign: "center", fontSize: "9px", letterSpacing: "1px", color: G.muted, fontFamily: G.font, fontWeight: 600, padding: "4px 0" }}>
-            {d.toUpperCase()}
-          </div>
-        ))}
-      </div>
-
-      {/* Day grid */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: "4px" }}>
-        {cells.map((dateStr, i) => {
-          if (!dateStr) return <div key={`b${i}`} />;
-          const dayNum   = Number(dateStr.slice(8, 10));
-          const isToday  = dateStr === todayStr;
-          const isSel    = dateStr === selectedDate;
-          const dayTasks  = tasksByDate[dateStr] || [];
-          const dayEvents = eventsByDate[dateStr] || [];
-          const hasBizEvent  = dayEvents.some(e => e.category === "Business");
-          const hasPersEvent = dayEvents.some(e => e.category !== "Business");
-          return (
-            <button
-              key={dateStr}
-              onClick={() => setSelectedDate(dateStr)}
-              style={{
-                aspectRatio: "1 / 1",
-                display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "3px",
-                background: isSel ? `${G.accent}22` : "transparent",
-                border: `1px solid ${isSel ? G.accent : isToday ? `${G.accent}66` : G.border}`,
-                borderRadius: "8px", cursor: "pointer", fontFamily: G.font,
-                color: isSel ? G.accent : G.text,
-                WebkitTapHighlightColor: "transparent", padding: 0,
-              }}>
-              <span style={{ fontSize: "13px", fontWeight: isToday || isSel ? 800 : 500 }}>{dayNum}</span>
-              <span style={{ display: "flex", gap: "3px", height: "5px", alignItems: "center" }}>
-                {dayTasks.length > 0 && <span style={{ width: "5px", height: "5px", borderRadius: "50%", background: TASK_DOT }} />}
-                {hasBizEvent && <span style={{ width: "5px", height: "5px", borderRadius: "50%", background: BIZ_COLOR }} />}
-                {hasPersEvent && <span style={{ width: "5px", height: "5px", borderRadius: "50%", background: PERS_COLOR }} />}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Legend */}
-      <div style={{ display: "flex", gap: "14px", justifyContent: "center", margin: "14px 0 4px", fontSize: "9px", letterSpacing: "0.5px", color: G.muted, fontFamily: G.font }}>
-        <span style={{ display: "flex", alignItems: "center", gap: "5px" }}><span style={{ width: "6px", height: "6px", borderRadius: "50%", background: TASK_DOT }} />Tasks</span>
-        <span style={{ display: "flex", alignItems: "center", gap: "5px" }}><span style={{ width: "6px", height: "6px", borderRadius: "50%", background: BIZ_COLOR }} />Business</span>
-        <span style={{ display: "flex", alignItems: "center", gap: "5px" }}><span style={{ width: "6px", height: "6px", borderRadius: "50%", background: PERS_COLOR }} />Personal</span>
-      </div>
-
-      {/* Selected day agenda */}
-      {selectedDate && (
-        <div style={{ marginTop: "16px", borderTop: `1px solid ${G.border}`, paddingTop: "16px" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px" }}>
-            <h3 style={{ fontFamily: G.fontDisplay, fontSize: "15px", fontWeight: 900, margin: 0, color: G.text }}>{selLabel}</h3>
-          </div>
-
-          {selTasks.length === 0 && selEvents.length === 0 && (
-            <p style={{ color: G.muted, fontSize: "12px", margin: "0 0 12px", fontFamily: G.font }}>Nothing scheduled.</p>
+      {/* Overdue roll-up */}
+      {overdueTasks.length > 0 && (
+        <div style={{ marginBottom: "16px" }}>
+          <button
+            onClick={() => setOverdueOpen(o => !o)}
+            style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
+              background: "#ff44441a", border: "1px solid #ff444455", borderRadius: "8px",
+              padding: "10px 12px", cursor: "pointer", color: "#ff4444", fontFamily: G.font, fontSize: "12px", fontWeight: 700, letterSpacing: "0.5px" }}>
+            <span>⚠ {overdueTasks.length} OVERDUE</span>
+            <span style={{ fontSize: "11px" }}>{overdueOpen ? "▾" : "▸"}</span>
+          </button>
+          {overdueOpen && (
+            <div style={{ marginTop: "8px" }}>
+              {overdueTasks.map(t => renderTask(t, calMode === "month", true))}
+            </div>
           )}
+        </div>
+      )}
 
-          {selEvents.map(ev => {
-            const c = ev.category === "Business" ? BIZ_COLOR : PERS_COLOR;
-            return (
-              <div key={ev.id} onClick={() => onEditEvent(ev)}
-                style={{ background: G.surface, border: `1px solid ${G.border}`, borderLeft: `3px solid ${c}`, borderRadius: "8px", padding: "12px 14px", marginBottom: "8px", cursor: "pointer" }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
-                  <span style={{ fontSize: "13px", fontWeight: 600, color: G.text, fontFamily: G.font }}>{ev.title}</span>
-                  <span style={dyn.chip(c)}>EVENT</span>
-                </div>
-                <div style={{ display: "flex", gap: "10px", marginTop: "5px", fontSize: "11px", color: G.muted, fontFamily: G.font }}>
-                  <span>{fmtEventTime(ev)}</span>
-                  {ev.location && <span>· {ev.location}</span>}
-                  {ev.recurrence && ev.recurrence !== "none" && <span>· repeats {ev.recurrence}</span>}
-                </div>
-              </div>
-            );
-          })}
-
-          {selTasks.map(t => {
-            const s = STATUS_MAP[t.status];
-            return (
-              <div key={t.id} onClick={() => onTaskClick(t.id)}
-                style={{ background: G.surface, border: `1px solid ${G.border}`, borderLeft: `3px solid ${s?.color || G.muted}`, borderRadius: "8px", padding: "12px 14px", marginBottom: "8px", cursor: "pointer" }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
-                  <span style={{ fontSize: "13px", fontWeight: 600, color: G.text, fontFamily: G.font }}>{t.title}</span>
-                  <span style={dyn.chip(s?.color || G.muted)}>{(s?.label) || t.status.toUpperCase()}</span>
-                </div>
-                <div style={{ marginTop: "5px" }}>
-                  <span style={dyn.catTag(t.category)}>{t.category}</span>
-                </div>
-              </div>
-            );
-          })}
-
-          {/* Add for this day */}
-          <div style={{ display: "flex", gap: "8px", marginTop: "12px" }}>
-            <button style={{ ...dyn.actionBtn(G.accent), flex: 1, padding: "10px" }} onClick={() => onAddTaskOnDate(selectedDate)}>
-              + Add task
-            </button>
-            <button style={{ ...dyn.actionBtn(G.accent), flex: 1, padding: "10px" }} onClick={() => onAddEventOnDate(selectedDate)}>
-              + Add event
+      {calMode === "month" ? (
+        <>
+          {/* Month nav */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "14px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <button style={navBtn} onClick={() => shiftMonth(-1)} aria-label="Previous month">‹</button>
+              <button style={navBtn} onClick={() => shiftMonth(1)} aria-label="Next month">›</button>
+            </div>
+            <h2 style={{ fontFamily: G.fontDisplay, fontSize: "18px", fontWeight: 900, margin: 0, color: G.text, letterSpacing: "-0.5px" }}>
+              {monthLabel}
+            </h2>
+            <button style={{ ...dyn.filterBtn(false, G.accent), border: `1px solid ${G.border}` }} onClick={goToday}>
+              Today
             </button>
           </div>
+
+          {/* Weekday header */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: "4px", marginBottom: "4px" }}>
+            {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map(d => (
+              <div key={d} style={{ textAlign: "center", fontSize: "9px", letterSpacing: "1px", color: G.muted, fontFamily: G.font, fontWeight: 600, padding: "4px 0" }}>
+                {d.toUpperCase()}
+              </div>
+            ))}
+          </div>
+
+          {/* Day grid */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: "4px" }}>
+            {cells.map((dateStr, i) => {
+              if (!dateStr) return <div key={`b${i}`} />;
+              const dayNum    = Number(dateStr.slice(8, 10));
+              const isToday   = dateStr === todayStr;
+              const isSel     = dateStr === selectedDate;
+              const isDrop    = dragOverDate === dateStr;
+              const dayTasks  = tasksOnDate(dateStr);
+              const dayEvents = eventsOnDate(dateStr);
+              const hasBizEvent  = dayEvents.some(e => e.category === "Business");
+              const hasPersEvent = dayEvents.some(e => e.category !== "Business");
+              return (
+                <button
+                  key={dateStr}
+                  data-cal-date={dateStr}
+                  onClick={() => setSelectedDate(dateStr)}
+                  onDragOver={(e) => { if (dragItem) { e.preventDefault(); setDragOverDate(dateStr); } }}
+                  onDrop={(e) => { e.preventDefault(); if (dragItem) doReschedule(dragItem, dateStr); }}
+                  style={{
+                    aspectRatio: "1 / 1",
+                    display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "3px",
+                    background: isDrop ? `${G.accent}33` : isSel ? `${G.accent}22` : "transparent",
+                    border: `1px solid ${isDrop || isSel ? G.accent : isToday ? `${G.accent}66` : G.border}`,
+                    borderRadius: "8px", cursor: "pointer", fontFamily: G.font,
+                    color: isSel ? G.accent : G.text,
+                    WebkitTapHighlightColor: "transparent", padding: 0,
+                  }}>
+                  <span style={{ fontSize: "13px", fontWeight: isToday || isSel ? 800 : 500 }}>{dayNum}</span>
+                  <span style={{ display: "flex", gap: "3px", height: "5px", alignItems: "center" }}>
+                    {dayTasks.length > 0 && <span style={{ width: "5px", height: "5px", borderRadius: "50%", background: TASK_DOT }} />}
+                    {hasBizEvent && <span style={{ width: "5px", height: "5px", borderRadius: "50%", background: BIZ_COLOR }} />}
+                    {hasPersEvent && <span style={{ width: "5px", height: "5px", borderRadius: "50%", background: PERS_COLOR }} />}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Legend */}
+          <div style={{ display: "flex", gap: "14px", justifyContent: "center", margin: "14px 0 4px", fontSize: "9px", letterSpacing: "0.5px", color: G.muted, fontFamily: G.font }}>
+            <span style={{ display: "flex", alignItems: "center", gap: "5px" }}><span style={{ width: "6px", height: "6px", borderRadius: "50%", background: TASK_DOT }} />Tasks</span>
+            <span style={{ display: "flex", alignItems: "center", gap: "5px" }}><span style={{ width: "6px", height: "6px", borderRadius: "50%", background: BIZ_COLOR }} />Business</span>
+            <span style={{ display: "flex", alignItems: "center", gap: "5px" }}><span style={{ width: "6px", height: "6px", borderRadius: "50%", background: PERS_COLOR }} />Personal</span>
+          </div>
+          {dragItem && <p style={{ textAlign: "center", fontSize: "10px", color: G.accent, fontFamily: G.font, margin: "4px 0 0" }}>Drop on a day to reschedule…</p>}
+
+          {/* Selected day agenda */}
+          {selectedDate && (
+            <div style={{ marginTop: "16px", borderTop: `1px solid ${G.border}`, paddingTop: "16px" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px" }}>
+                <h3 style={{ fontFamily: G.fontDisplay, fontSize: "15px", fontWeight: 900, margin: 0, color: G.text }}>{selLabel}</h3>
+              </div>
+
+              {selTasks.length === 0 && selEvents.length === 0 && (
+                <p style={{ color: G.muted, fontSize: "12px", margin: "0 0 12px", fontFamily: G.font }}>Nothing scheduled.</p>
+              )}
+
+              {selEvents.map(ev => renderEvent(ev, true))}
+              {selTasks.map(t => renderTask(t, true, false))}
+
+              {/* Add for this day */}
+              <div style={{ display: "flex", gap: "8px", marginTop: "12px" }}>
+                <button style={{ ...dyn.actionBtn(G.accent), flex: 1, padding: "10px" }} onClick={() => onAddTaskOnDate(selectedDate)}>
+                  + Add task
+                </button>
+                <button style={{ ...dyn.actionBtn(G.accent), flex: 1, padding: "10px" }} onClick={() => onAddEventOnDate(selectedDate)}>
+                  + Add event
+                </button>
+              </div>
+            </div>
+          )}
+        </>
+      ) : (
+        /* Agenda / upcoming view */
+        <div>
+          <h2 style={{ fontFamily: G.fontDisplay, fontSize: "18px", fontWeight: 900, margin: "0 0 14px", color: G.text, letterSpacing: "-0.5px" }}>
+            Upcoming · next 3 weeks
+          </h2>
+          {upcomingDays.length === 0 && (
+            <p style={{ color: G.muted, fontSize: "12px", fontFamily: G.font }}>Nothing scheduled in the next 3 weeks.</p>
+          )}
+          {upcomingDays.map(({ ds, d, evs, tks }) => (
+            <div key={ds} style={{ marginBottom: "16px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
+                <span style={{ fontFamily: G.fontDisplay, fontSize: "13px", fontWeight: 900, color: ds === todayStr ? G.accent : G.text }}>
+                  {ds === todayStr ? "Today · " : ""}{d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
+                </span>
+                <span style={{ flex: 1, height: "1px", background: G.border }} />
+              </div>
+              {evs.map(ev => renderEvent(ev, false))}
+              {tks.map(t => renderTask(t, false, false))}
+            </div>
+          ))}
         </div>
       )}
     </div>

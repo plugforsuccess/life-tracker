@@ -91,11 +91,15 @@ Typography: `font` is the body stack (`Inter`, sans-serif) and `fontDisplay` is 
 - Three mutually-exclusive top-level views: list / report / calendar. `showReport` and `showCalendar` boolean states control them — turning one on turns the others off (handled in the REPORT/CALENDAR header button `onClick`s).
 - Header controls (CALENDAR button + REPORT button + 🎨 theme button) live in the absolutely-positioned div in the header; CALENDAR is styled like REPORT (toggle highlight via `G.accent`).
 - The stats/filters blocks are gated by `!showReport && !showCalendar`. The main render switch is three-way: `showReport ? <CommandReport/> : showCalendar ? <Calendar/> : <taskList>`.
-- `Calendar` is a function component defined after `CommandReport` in `src/App.jsx`. Props: `tasks, events, G, dyn, base, onTaskClick, onAddTaskOnDate, onAddEventOnDate, onEditEvent`.
+- `Calendar` is a function component defined after `CommandReport` in `src/App.jsx`. Props: `tasks, events, G, dyn, base, onTaskClick, onAddTaskOnDate, onAddEventOnDate, onEditEvent, onRescheduleTask, onRescheduleEvent`. Internal `calMode` toggles `"month"` vs `"agenda"`.
 - Month grid (Sun–Sat) with prev/next month nav, a "Today" button, and the month/year label. Manages `viewYear`/`viewMonth`/`selectedDate` internally.
-- A day is "active" if any task has `due_date === dateStr` OR any event has `event_date === dateStr`. Small colored dots indicate content: tasks (`#38bdf8`), Business events (`#7c6af7`), Personal events (`#ff8c42`). Today and the selected day are highlighted.
+- A day is "active" if any task has `due_date === dateStr` OR any event occurs on it. Small colored dots indicate content: tasks (`#38bdf8`), Business events (`#7c6af7`), Personal events (`#ff8c42`). Today and the selected day are highlighted.
 - Tapping a day selects it and shows its agenda below the grid: events (tap → `openEditEvent`) and tasks (tap → `onTaskClick` = `setShowCalendar(false)` + `setExpandedId(id)`). "+ Add task" / "+ Add event" actions add for the selected date.
 - Dated tasks AUTO-APPEAR on the calendar — no extra step, just `due_date`.
+- **Recurrence is virtual** — no rows are generated. `eventOccursOn(ev, dateStr)` (module-level) expands `recurrence` (`daily`/`weekly`/`monthly`/`yearly`) forward from `event_date`; monthly clamps the day-of-month to month end (the 31st lands on Feb 28). Tasks have no recurrence field (single-row status can't represent per-instance completion — would need a generator).
+- **Drag-to-reschedule:** agenda rows have a `⠿` drag handle; day cells carry `data-cal-date` and are drop targets. Desktop uses HTML5 DnD; touch uses `elementFromPoint` to find the cell (mirrors the checklist touch pattern). Drop calls `onRescheduleTask`/`onRescheduleEvent` → `handleRescheduleTask`/`handleRescheduleEvent` in `TaskTracker` (immediate Supabase write; task moves log an activity entry). Rescheduling a recurring event shifts the whole series start.
+- **Overdue roll-up:** collapsible banner (open by default) listing active tasks (`STATUS_MAP[status].next` truthy) with `due_date < today`. Shown in both modes.
+- **Agenda mode:** flat list of the next 21 days that have any task/event (recurrence-expanded), grouped by date.
 - **Date handling:** `localDateStr(d)` (module-level helper) builds local-time `YYYY-MM-DD`. NEVER use `toISOString()` for calendar dates — it shifts the day by timezone. `due_date` and `event_date` are `'YYYY-MM-DD'` strings.
 
 ## Events Table & Data Layer
