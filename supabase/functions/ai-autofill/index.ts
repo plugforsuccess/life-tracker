@@ -47,7 +47,7 @@ Deno.serve(async (req: Request) => {
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
+        model: "claude-sonnet-4-6",
         max_tokens: 1000,
         system: `You are a task parsing assistant for a life and business task tracker. Given the user's plain-english description, extract structured task data.
 Respond ONLY with a valid JSON object — no markdown fences, no explanation, no extra text.
