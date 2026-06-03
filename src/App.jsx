@@ -1397,8 +1397,6 @@ export default function TaskTracker() {
                     <div style={{ display:"flex", gap:"10px", marginTop:"12px", alignItems:"center", flexWrap:"wrap" }}>
                       {dueInfo && <span style={{ fontSize:"9px", color: dueInfo.color, letterSpacing:"1px", fontWeight:700 }}>{dueInfo.label}</span>}
                       {isResolved && <span style={{ fontSize:"9px", color:"#00c896" }}>✓ DONE</span>}
-                      {isBlocked && <span style={{ fontSize:"9px", color:"#ff4444" }}>BLOCKED BY {blockers.length}</span>}
-                      {logCount > 0 && <span style={{ fontSize:"9px", color: G.muted }}>📋 {logCount} note{logCount!==1?"s":""}</span>}
                       {(() => {
                         const progress = checklistProgress(task.checklist);
                         return progress ? (
