@@ -435,7 +435,7 @@ export default function TaskTracker() {
       WebkitTapHighlightColor: "transparent",
     }),
     badge:       (color) => ({ fontSize: "9px", letterSpacing: "1.5px", padding: "2px 8px", borderRadius: "3px", border: `1px solid ${color}`, color, whiteSpace: "nowrap" }),
-    catTag:      (cat)   => ({ fontSize: "9px", letterSpacing: "1px", color: cat === "Business" ? "#7c6af7" : "#ff8c42", textTransform: "uppercase" }),
+    catTag:      (cat)   => { const c = cat === "Business" ? "#7c6af7" : "#ff8c42"; return ({ fontSize: "9px", letterSpacing: "1px", color: c, background: `${c}1f`, padding: "2px 8px", borderRadius: "3px", fontWeight: 700, textTransform: "uppercase", whiteSpace: "nowrap" }); },
     pairOption:  (sel)   => ({ padding: "10px 8px", borderRadius: "6px", border: `1px solid ${sel ? G.accent : G.border}`, background: sel ? G.accentGlow : "transparent", color: sel ? G.accent : G.muted, fontSize: "10px", cursor: "pointer", textAlign: "center", fontFamily: G.font, transition: "all 0.15s" }),
     priorityBtn: (sel, color) => ({ flex: 1, padding: "8px 4px", borderRadius: "6px", border: `1px solid ${sel ? color : G.border}`, background: sel ? `${color}22` : "transparent", color: sel ? color : G.muted, fontSize: "10px", letterSpacing: "1px", fontFamily: G.font, cursor: "pointer", transition: "all 0.15s" }),
     actionBtn:   (color, ghost) => ({ padding: "5px 12px", borderRadius: "4px", border: `1px solid ${ghost ? G.border : color}`, background: ghost ? "transparent" : `${color}22`, color: ghost ? G.muted : color, fontSize: "10px", fontFamily: G.font, cursor: "pointer", transition: "all 0.15s" }),
