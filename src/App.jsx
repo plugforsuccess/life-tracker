@@ -1156,89 +1156,70 @@ export default function TaskTracker() {
 
         {/* ── Header ── */}
         <div style={base.header}>
-          <p style={base.logo}>LIFE COMMAND CENTER</p>
-          <h1 style={base.headline}>STATUS TRACKER</h1>
-          {/* Header right-side controls — single container, both buttons inside */}
-          <div style={{
-            position: "absolute",
-            top: "18px",
-            right: "14px",
-            display: "flex",
-            flexDirection: "row",
-            alignItems: "center",
-            gap: "6px",
-          }}>
-            {/* Calendar button */}
-            <button
-              onClick={() => {
-                setShowCalendar(v => {
-                  const next = !v;
-                  if (next) setShowReport(false);
-                  return next;
-                });
-              }}
-              style={{
-                background: showCalendar ? `${G.accent}22` : "transparent",
-                border: `1px solid ${showCalendar ? G.accent : G.border}`,
-                borderRadius: "6px",
-                padding: "5px 10px",
-                fontSize: "10px",
-                letterSpacing: "1.5px",
-                fontFamily: G.font,
-                cursor: "pointer",
-                color: showCalendar ? G.accent : G.muted,
-                display: "flex",
-                alignItems: "center",
-                gap: "5px",
-                whiteSpace: "nowrap",
-              }}>
-              <span style={{ fontSize: "13px" }}>📅</span>
-              <span>CALENDAR</span>
-            </button>
-
-            {/* Report button */}
-            <button
-              onClick={() => {
-                setShowReport(v => {
-                  const next = !v;
-                  if (next) { setReportKey(k => k + 1); setShowCalendar(false); }
-                  return next;
-                });
-              }}
-              style={{
-                background: showReport ? `${G.accent}22` : "transparent",
-                border: `1px solid ${showReport ? G.accent : G.border}`,
-                borderRadius: "6px",
-                padding: "5px 10px",
-                fontSize: "10px",
-                letterSpacing: "1.5px",
-                fontFamily: G.font,
-                cursor: "pointer",
-                color: showReport ? G.accent : G.muted,
-                display: "flex",
-                alignItems: "center",
-                gap: "5px",
-                whiteSpace: "nowrap",
-              }}>
-              <span style={{ fontSize: "13px" }}>📊</span>
-              <span>REPORT</span>
-            </button>
-
-            {/* Theme button */}
+          {/* Row 1: brand eyebrow + theme button */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
+            <p style={base.logo}>LIFE COMMAND CENTER</p>
             <button
               onClick={() => setModalMode("theme")}
+              aria-label="Change theme"
               style={{
                 background: "transparent",
                 border: `1px solid ${G.border}`,
                 borderRadius: "6px",
-                padding: "6px 10px",
-                fontSize: "16px",
+                padding: "5px 9px",
+                fontSize: "15px",
+                lineHeight: 1,
                 cursor: "pointer",
                 color: G.text,
                 flexShrink: 0,
               }}>
               🎨
             </button>
+          </div>
+
+          <h1 style={base.headline}>STATUS TRACKER</h1>
+
+          {/* Segmented view switcher: List / Calendar / Report */}
+          <div style={{
+            display: "flex",
+            marginTop: "14px",
+            background: G.bg,
+            border: `1px solid ${G.border}`,
+            borderRadius: "9px",
+            padding: "3px",
+            gap: "3px",
+          }}>
+            {[
+              { key: "list",     label: "List",     active: !showReport && !showCalendar,
+                onClick: () => { setShowReport(false); setShowCalendar(false); } },
+              { key: "calendar", label: "Calendar", active: showCalendar,
+                onClick: () => { setShowCalendar(true); setShowReport(false); } },
+              { key: "report",   label: "Report",   active: showReport,
+                onClick: () => { setShowReport(true); setShowCalendar(false); setReportKey(k => k + 1); } },
+            ].map(seg => (
+              <button
+                key={seg.key}
+                onClick={seg.onClick}
+                aria-pressed={seg.active}
+                style={{
+                  flex: 1,
+                  padding: "8px 4px",
+                  borderRadius: "6px",
+                  border: "none",
+                  background: seg.active ? G.accent : "transparent",
+                  color: seg.active ? "#fff" : G.muted,
+                  fontFamily: G.font,
+                  fontSize: "11px",
+                  letterSpacing: "1px",
+                  fontWeight: seg.active ? 700 : 500,
+                  textTransform: "uppercase",
+                  cursor: "pointer",
+                  transition: "all 0.15s",
+                  boxShadow: seg.active ? `0 1px 6px ${G.accentGlow}` : "none",
+                }}>
+                {seg.label}
+              </button>
+            ))}
           </div>
         </div>
 
