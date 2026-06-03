@@ -423,6 +423,7 @@ export default function TaskTracker() {
     localStorage.getItem("lcc-resolved-only") === "true"
   );
   const [expandedId,     setExpandedId]     = useState(null);
+  const [highlightId,    setHighlightId]    = useState(null);   // task to pulse after jump-to-list
   const [loading,        setLoading]        = useState(true);
   const [filtersOpen,    setFiltersOpen]    = useState(false);
   const [showReport,     setShowReport]     = useState(false);
@@ -985,6 +986,28 @@ export default function TaskTracker() {
       return 0;
     });
 
+  // ── Jump from Calendar/Report to a specific task in the List view ──
+  // Reveals it if active filters would hide it, then scrolls + pulse-highlights.
+  function goToTaskInList(id) {
+    const task = tasks.find(t => t.id === id);
+    setShowReport(false);
+    setShowCalendar(false);
+    // Only relax filters when the task isn't already visible, so we respect the
+    // user's filters whenever possible.
+    if (task && !filtered.some(t => t.id === id)) {
+      const isResolved = !STATUS_MAP[task.status]?.next;
+      setFilter("all"); setCatFilter("all"); setPriorityFilter("all"); setDueFilter("all");
+      if (isResolved) { setResolvedOnly(false); setShowResolved(true); }
+    }
+    setExpandedId(id);
+    setHighlightId(id);
+    setTimeout(() => {
+      const el = document.querySelector(`[data-task-id="${id}"]`);
+      if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 60);
+    setTimeout(() => setHighlightId(h => (h === id ? null : h)), 1700);
+  }
+
   // ── Counts per pair filter (active tasks only) ──
   function pairCount(key) {
     if (key === "all") return activeTasks.length;
@@ -1148,6 +1171,12 @@ export default function TaskTracker() {
         button:active { transform: scale(0.96); }
         .lcc-stat:active { transform: scale(0.95); opacity: 0.8; }
         .lcc-card:active { transform: scale(0.985); }
+        .lcc-highlight { border-color: ${G.accent} !important; animation: lccPulse 1.6s ease-out 1; }
+        @keyframes lccPulse {
+          0%   { box-shadow: 0 0 0 0 ${G.accent}88; }
+          60%  { box-shadow: 0 0 0 8px ${G.accent}00; }
+          100% { box-shadow: 0 0 0 0 ${G.accent}00; }
+        }
         input[type=date] { color-scheme: ${G.mode}; }
         input[type=date]::-webkit-calendar-picker-indicator { filter: invert(0.4) sepia(1) saturate(3) hue-rotate(220deg); cursor: pointer; }
       `}</style>
@@ -1429,7 +1458,7 @@ export default function TaskTracker() {
         {showReport ? (
           <CommandReport
             analytics={analytics} tasks={tasks} G={G} dyn={dyn} base={base}
-            onTaskClick={(id) => { setShowReport(false); setExpandedId(id); }}
+            onTaskClick={(id) => goToTaskInList(id)}
             onNavigate={(filters) => {
               setShowReport(false);
               if (filters.category) setCatFilter(filters.category);
@@ -1445,7 +1474,7 @@ export default function TaskTracker() {
         ) : showCalendar ? (
           <Calendar
             tasks={tasks} events={events} G={G} dyn={dyn} base={base}
-            onTaskClick={(id) => { setShowCalendar(false); setExpandedId(id); }}
+            onTaskClick={(id) => goToTaskInList(id)}
             onAddTaskOnDate={(d) => openAddOnDate(d)}
             onAddEventOnDate={(d) => openAddEvent(d)}
             onEditEvent={(ev) => openEditEvent(ev)}
@@ -1510,7 +1539,9 @@ export default function TaskTracker() {
             const isHigh    = task.priority === "high" && !isResolved;
 
             return (
-              <div key={task.id} className="lcc-card" style={dyn.card(s.color, isBlocked, { isOverdue, isHigh, isResolved })}
+              <div key={task.id} data-task-id={task.id}
+                className={`lcc-card${highlightId === task.id ? " lcc-highlight" : ""}`}
+                style={dyn.card(s.color, isBlocked, { isOverdue, isHigh, isResolved })}
                 onClick={() => setExpandedId(expanded ? null : task.id)}>
 
                 {/* Title row */}
