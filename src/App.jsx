@@ -1628,7 +1628,7 @@ export default function TaskTracker() {
                           ↩ Reopen
                         </button>
                       )}
-                      <button type="button" style={dyn.actionBtn(G.accent)} onClick={e => openEdit(task, e)}>✏ Edit</button>
+                      <button type="button" style={dyn.actionBtn(G.accent)} onClick={e => openEdit(task, e)}>Edit</button>
                       <button
                         type="button"
                         style={dyn.actionBtn(G.accent, true)}
@@ -1638,9 +1638,9 @@ export default function TaskTracker() {
                           setBlockerSearch("");
                           setModalMode("blocker");
                         }}>
-                        🔒 {(task.blocked_by || []).length > 0 ? `Blockers (${(task.blocked_by || []).length})` : "Add Blocker"}
+                        {(task.blocked_by || []).length > 0 ? `Blockers (${(task.blocked_by || []).length})` : "Add Blocker"}
                       </button>
-                      <button type="button" style={dyn.actionBtn("#38bdf8")} onClick={e => openLog(task, e)}>📋 Log ({logCount})</button>
+                      <button type="button" style={dyn.actionBtn("#38bdf8")} onClick={e => openLog(task, e)}>Log ({logCount})</button>
                     </div>
                   </div>
                 )}
