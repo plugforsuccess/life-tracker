@@ -85,3 +85,27 @@ Typography: `font` is the body stack (`Inter`, sans-serif) and `fontDisplay` is 
 - `resolved_at` timestamptz column added to tasks — set in `handleAdvance()` when advancing to a terminal status
 - No new Supabase tables required — all analytics computed client-side from existing data
 - Premium gating not yet implemented — full feature available to all users in v1
+
+## Calendar View
+
+- Three mutually-exclusive top-level views: list / report / calendar. `showReport` and `showCalendar` boolean states control them — turning one on turns the others off (handled in the REPORT/CALENDAR header button `onClick`s).
+- Header controls (CALENDAR button + REPORT button + 🎨 theme button) live in the absolutely-positioned div in the header; CALENDAR is styled like REPORT (toggle highlight via `G.accent`).
+- The stats/filters blocks are gated by `!showReport && !showCalendar`. The main render switch is three-way: `showReport ? <CommandReport/> : showCalendar ? <Calendar/> : <taskList>`.
+- `Calendar` is a function component defined after `CommandReport` in `src/App.jsx`. Props: `tasks, events, G, dyn, base, onTaskClick, onAddTaskOnDate, onAddEventOnDate, onEditEvent`.
+- Month grid (Sun–Sat) with prev/next month nav, a "Today" button, and the month/year label. Manages `viewYear`/`viewMonth`/`selectedDate` internally.
+- A day is "active" if any task has `due_date === dateStr` OR any event has `event_date === dateStr`. Small colored dots indicate content: tasks (`#38bdf8`), Business events (`#7c6af7`), Personal events (`#ff8c42`). Today and the selected day are highlighted.
+- Tapping a day selects it and shows its agenda below the grid: events (tap → `openEditEvent`) and tasks (tap → `onTaskClick` = `setShowCalendar(false)` + `setExpandedId(id)`). "+ Add task" / "+ Add event" actions add for the selected date.
+- Dated tasks AUTO-APPEAR on the calendar — no extra step, just `due_date`.
+- **Date handling:** `localDateStr(d)` (module-level helper) builds local-time `YYYY-MM-DD`. NEVER use `toISOString()` for calendar dates — it shifts the day by timezone. `due_date` and `event_date` are `'YYYY-MM-DD'` strings.
+
+## Events Table & Data Layer
+
+- `events` is a dedicated Supabase table (NOT a flag on tasks). Columns: `id, title, event_date (date), start_time/end_time (time, null = all-day), all_day (bool), category ('Business'|'Personal'), location, notes, recurrence ('none'|'daily'|'weekly'|'monthly'|'yearly'), created_at, updated_at`.
+- RLS MIRRORS the tasks table exactly: RLS enabled + a single permissive `"Allow all access"` policy (`for all using (true) with check (true)`) so the app reaches it with the anon key. Same `handle_updated_at` trigger. Migration: `supabase/migrations/20260603_add_events_table.sql` (also reflected in `schema.sql`).
+- Event CRUD helpers live in `src/lib/supabase.js`: `fetchEvents/addEvent/updateEvent/deleteEvent`, mirroring the task CRUD helpers (`fetchTasks/addTask/updateTask/deleteTask`) that live at the top of `src/App.jsx`.
+- `events` is added to the `supabase_realtime` publication and subscribed alongside `tasks` in the main `useEffect`.
+- Event add/edit modal: `modalMode === "event"` with `eventForm`/`eventTarget`/`eventError`/`eventSaving` state, `BLANK_EVENT` constant, `openAddEvent(dateStr)`/`openEditEvent(ev)`/`handleSaveEvent()`/`handleDeleteEvent()`. `openAddOnDate(dateStr)` is the add-task variant that pre-fills `due_date`.
+
+## supabase.js Fallback Fix
+
+- `FALLBACK_URL`/`FALLBACK_KEY` in `src/lib/supabase.js` previously pointed at the WRONG project (`ghnpzllykteelveezhnv` / quotesync). They now point at the confirmed life-tracker project (`lscgejzogtikkftwlnjn`) URL + anon key. Env vars (`VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY`) still override the fallback when present.
