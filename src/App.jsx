@@ -1385,8 +1385,8 @@ export default function TaskTracker() {
                 {/* Type + status + priority row */}
                 <div style={{ display:"flex", gap:"8px", marginTop:"8px", alignItems:"center", flexWrap:"wrap" }}>
                   <span style={dyn.catTag(task.category)}>{task.category}</span>
-                  <span style={dyn.chip(s.color)}>{s.emoji} {s.label}</span>
-                  {!isResolved && <span style={dyn.chip(p.color)}>{p.icon} {p.label}</span>}
+                  <span style={dyn.chip(s.color)}>{s.label}</span>
+                  {!isResolved && <span style={dyn.chip(p.color)}>{p.label}</span>}
                 </div>
 
                 {/* Expanded details */}
