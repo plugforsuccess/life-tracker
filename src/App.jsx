@@ -1363,7 +1363,6 @@ export default function TaskTracker() {
                     color: isResolved ? G.muted : G.text,
                   }}>
                     {task.title}
-                    {isBlocked && <span style={{ marginLeft:"6px" }}>🔒</span>}
                   </span>
                   {expanded && (
                     <button
@@ -1387,6 +1386,7 @@ export default function TaskTracker() {
                   <span style={dyn.catTag(task.category)}>{task.category}</span>
                   <span style={dyn.chip(s.color)}>{s.label}</span>
                   {!isResolved && <span style={dyn.chip(p.color)}>{p.label}</span>}
+                  {isBlocked && <span style={{ fontSize:"13px", lineHeight:1 }}>🔒</span>}
                 </div>
 
                 {/* Expanded details */}
