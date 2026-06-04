@@ -3340,8 +3340,11 @@ function Calendar({ tasks, events, G, dyn, base, onTaskClick, onAddTaskOnDate, o
   function renderTask(t, draggable, showDue) {
     const s = STATUS_MAP[t.status];
     const overdue = t.due_date && t.due_date < todayStr && s?.next;
+    const isResolved = !s?.next;
+    // Match the List view's resolved treatment: grey left bar + dimmed (dyn.card)
+    const barColor = isResolved ? G.muted : overdue ? "#ff4444" : (s?.color || G.muted);
     return (
-      <div key={`t-${t.id}`} onClick={() => onTaskClick(t.id)} style={{ ...rowCard(overdue ? "#ff4444" : (s?.color || G.muted)), display: "flex", alignItems: "center" }}>
+      <div key={`t-${t.id}`} onClick={() => onTaskClick(t.id)} style={{ ...rowCard(barColor), opacity: isResolved ? 0.65 : 1, display: "flex", alignItems: "center" }}>
         {draggable && dragHandle("task", t.id)}
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
@@ -3455,6 +3458,7 @@ function Calendar({ tasks, events, G, dyn, base, onTaskClick, onAddTaskOnDate, o
               const isSel     = dateStr === selectedDate;
               const isDrop    = dragOverDate === dateStr;
               const dayTasks  = tasksOnDate(dateStr);
+              const hasActiveTask = dayTasks.some(t => STATUS_MAP[t.status]?.next);
               const dayEvents = eventsOnDate(dateStr);
               const hasBizEvent  = dayEvents.some(e => e.category === "Business");
               const hasPersEvent = dayEvents.some(e => e.category !== "Business");
@@ -3476,7 +3480,11 @@ function Calendar({ tasks, events, G, dyn, base, onTaskClick, onAddTaskOnDate, o
                   }}>
                   <span style={{ fontSize: "13px", fontWeight: isToday || isSel ? 800 : 500 }}>{dayNum}</span>
                   <span style={{ display: "flex", gap: "3px", height: "5px", alignItems: "center" }}>
-                    {dayTasks.length > 0 && <span style={{ width: "5px", height: "5px", borderRadius: "50%", background: TASK_DOT }} />}
+                    {dayTasks.length > 0 && (
+                      hasActiveTask
+                        ? <span style={{ width: "5px", height: "5px", borderRadius: "50%", background: TASK_DOT }} />
+                        : <span style={{ width: "5px", height: "5px", borderRadius: "50%", background: "transparent", border: `1px solid ${G.muted}`, boxSizing: "border-box" }} />
+                    )}
                     {hasBizEvent && <span style={{ width: "5px", height: "5px", borderRadius: "50%", background: BIZ_COLOR }} />}
                     {hasPersEvent && <span style={{ width: "5px", height: "5px", borderRadius: "50%", background: PERS_COLOR }} />}
                   </span>
