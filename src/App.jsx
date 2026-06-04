@@ -33,7 +33,7 @@ const deleteTask = async (id) => {
 };
 
 // ─── AI AUTO-FILL (via Supabase Edge Function) ──────────────────────────────
-async function aiAutoFill(prompt) {
+async function aiAutoFill(prompt, mode = "task") {
   const res = await fetch(
     `${supabase.functionsUrl}/ai-autofill`,
     {
@@ -42,7 +42,7 @@ async function aiAutoFill(prompt) {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${supabase.supabaseKey}`,
       },
-      body: JSON.stringify({ prompt }),
+      body: JSON.stringify({ prompt, mode }),
     }
   );
   if (!res.ok) {
@@ -515,6 +515,11 @@ export default function TaskTracker() {
   const [aiLoading,setAiLoading] = useState(false);
   const [aiError,  setAiError]   = useState("");
 
+  // AI (event modal)
+  const [eventAiPrompt,  setEventAiPrompt]  = useState("");
+  const [eventAiLoading, setEventAiLoading] = useState(false);
+  const [eventAiError,   setEventAiError]   = useState("");
+
   // Blocker section state
   const [blockerSectionOpen, setBlockerSectionOpen] = useState(false);
   const [blockerSearch,      setBlockerSearch]      = useState("");
@@ -642,6 +647,7 @@ export default function TaskTracker() {
     setEventTarget(null);
     setEventForm({ ...BLANK_EVENT, event_date: dateStr || localDateStr() });
     setEventError(""); setEventSaving(false);
+    setEventAiPrompt(""); setEventAiError(""); setEventAiLoading(false);
     setModalMode("event");
   }
   function openEditEvent(ev) {
@@ -725,6 +731,7 @@ export default function TaskTracker() {
     setBlockerTarget(null); setBlockerPickerNewSelection(null); setBlockerPickerReason("");
     setModalDragState(null);
     setEventTarget(null); setEventForm(BLANK_EVENT); setEventError(""); setEventSaving(false);
+    setEventAiPrompt(""); setEventAiError(""); setEventAiLoading(false);
   }
 
   // ── AI auto-fill ──
@@ -745,6 +752,28 @@ export default function TaskTracker() {
       setAiPrompt("");
     } catch (err) { setAiError(err.message || "Couldn't parse — try being more specific."); }
     setAiLoading(false);
+  }
+
+  async function handleEventAiFill() {
+    if (!eventAiPrompt.trim()) return;
+    setEventAiLoading(true); setEventAiError("");
+    try {
+      const parsed = await aiAutoFill(eventAiPrompt, "event");
+      setEventForm(f => ({
+        ...f,
+        title:      parsed.title      || f.title,
+        event_date: parsed.event_date || f.event_date,
+        all_day:    typeof parsed.all_day === "boolean" ? parsed.all_day : f.all_day,
+        start_time: parsed.start_time || f.start_time,
+        end_time:   parsed.end_time   || f.end_time,
+        category:   parsed.category   || f.category,
+        location:   parsed.location   || f.location,
+        notes:      parsed.notes      || f.notes,
+        recurrence: parsed.recurrence || f.recurrence,
+      }));
+      setEventAiPrompt("");
+    } catch (err) { setEventAiError(err.message || "Couldn't parse — try being more specific."); }
+    setEventAiLoading(false);
   }
 
   // ── Add task ──
@@ -2665,6 +2694,31 @@ export default function TaskTracker() {
             <h2 style={{ fontFamily: G.fontDisplay, fontSize: "18px", fontWeight: 900, margin: "0 0 20px", color: G.text, letterSpacing: "-0.5px" }}>
               {eventTarget ? "EDIT EVENT" : "NEW EVENT"}
             </h2>
+
+            {/* AI Auto-fill (new event only) */}
+            {!eventTarget && (
+              <>
+                <label style={base.label}>✨ AI Auto-Fill — describe it, Claude fills the form</label>
+                <div style={base.aiBox}>
+                  <textarea
+                    style={{ width:"100%", background:"transparent", border:"none", color: G.text, fontFamily: G.font, fontSize:"12px", outline:"none", resize:"none", lineHeight:1.6, minHeight:"52px" }}
+                    placeholder={`e.g. "Lunch with the BriteBox attorney next Tuesday 12:30pm downtown" or "Monthly rent reminder on the 1st"`}
+                    value={eventAiPrompt}
+                    onChange={e => setEventAiPrompt(e.target.value)}
+                    onKeyDown={e => { if (e.key==="Enter" && (e.metaKey||e.ctrlKey)) handleEventAiFill(); }}
+                  />
+                  <div style={{ display:"flex", alignItems:"center", gap:"10px", marginTop:"6px" }}>
+                    <button type="button"
+                      style={{ padding:"6px 14px", borderRadius:"6px", background: eventAiLoading ? "transparent" : G.accentGlow, border:`1px solid ${eventAiLoading ? G.border : G.accent}`, color: eventAiLoading ? G.muted : G.accent, fontFamily: G.font, fontSize:"10px", letterSpacing:"1px", cursor: eventAiLoading ? "not-allowed" : "pointer" }}
+                      onClick={handleEventAiFill} disabled={eventAiLoading}>
+                      {eventAiLoading ? "THINKING…" : "✨ FILL FORM"}
+                    </button>
+                    {eventAiError && <span style={{ fontSize:"10px", color:"#ff4444" }}>{eventAiError}</span>}
+                    {!eventAiError && <span style={{ fontSize:"9px", color: G.muted }}>⌘+Enter to run</span>}
+                  </div>
+                </div>
+              </>
+            )}
 
             <label style={base.label}>Title</label>
             <input style={base.input} value={eventForm.title} placeholder="Event title"

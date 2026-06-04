@@ -28,7 +28,7 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const { prompt } = await req.json();
+    const { prompt, mode = "task" } = await req.json();
 
     if (!prompt || typeof prompt !== "string") {
       return new Response(JSON.stringify({ error: "Missing prompt" }), {
@@ -39,17 +39,54 @@ Deno.serve(async (req: Request) => {
 
     const today = new Date().toISOString().split("T")[0];
 
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-6",
-        max_tokens: 1000,
-        system: `You are a task parsing assistant for a life and business task tracker. Given the user's plain-english description, extract structured task data.
+    const eventSystem = `You are an event parsing assistant for a life and business calendar. Given the user's plain-english description, extract structured calendar-event data.
+Respond ONLY with a valid JSON object — no markdown fences, no explanation, no extra text.
+
+Today's date is ${today}.
+
+─── DATE RULES ──────────────────────────────────────────────
+- Resolve relative dates against today's date.
+- "tomorrow" → today + 1 day. "next Tuesday" → the next upcoming Tuesday after today.
+- "the 1st" / "on the 15th" → that day-of-month (this month if still upcoming, otherwise next month).
+- "end of month" → last day of the current month.
+- If no date can be determined, use null.
+
+─── TIME RULES ──────────────────────────────────────────────
+- If a specific time is given (e.g. "12:30pm", "9am", "noon"), set all_day=false and put start_time in 24-hour "HH:MM".
+- If an end time or a duration is given, fill end_time; otherwise leave end_time null.
+- If NO time is mentioned, set all_day=true and start_time/end_time=null.
+- "noon" → "12:00", "midnight" → "00:00".
+
+─── CATEGORY RULES ──────────────────────────────────────────
+- "Business" → tenants, contractors, property showings/inspections/closings, vendors, LLC, business meetings, attorneys on business matters.
+- "Personal" → personal appointments, family, health, social, errands, anything affecting personal life.
+- When unclear, default to "Personal".
+
+─── RECURRENCE RULES ────────────────────────────────────────
+- "every day"/"daily" → daily; "every week"/"weekly"/"every Monday" → weekly;
+  "every month"/"monthly"/"on the 1st each month" → monthly; "every year"/"annually"/"yearly" → yearly.
+- If it does not repeat, use "none".
+
+─── TITLE / LOCATION / NOTES ────────────────────────────────
+- title: short and specific (max ~7 words); include the party/place if mentioned. Never start with "I need to" or "Event:".
+- location: a place if mentioned (address, venue, "downtown", "Unit 2"), else empty string.
+- notes: extra context that won't fit the title (names, phone, purpose), under 15 words, else empty string.
+
+─── OUTPUT SHAPE ────────────────────────────────────────────
+Return exactly this JSON and nothing else:
+{
+  "title": "short event title",
+  "event_date": "YYYY-MM-DD" or null,
+  "all_day": true or false,
+  "start_time": "HH:MM" or null,
+  "end_time": "HH:MM" or null,
+  "category": "Business" or "Personal",
+  "location": "string or empty string",
+  "notes": "string or empty string",
+  "recurrence": one of: none, daily, weekly, monthly, yearly
+}`;
+
+    const taskSystem = `You are a task parsing assistant for a life and business task tracker. Given the user's plain-english description, extract structured task data.
 Respond ONLY with a valid JSON object — no markdown fences, no explanation, no extra text.
 
 Today's date is ${today}.
@@ -174,7 +211,19 @@ Return exactly this JSON and nothing else:
   "priority": "high", "medium", or "low",
   "due_date": "YYYY-MM-DD" or null,
   "notes": "under 15 words of key context, or empty string"
-}`,
+}`;
+
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-6",
+        max_tokens: 1000,
+        system: mode === "event" ? eventSystem : taskSystem,
         messages: [{ role: "user", content: prompt }],
       }),
     });
