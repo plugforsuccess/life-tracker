@@ -494,6 +494,7 @@ export default function TaskTracker() {
   const [editTarget, setEditTarget] = useState(null);  // task being edited
   const [logTarget,  setLogTarget]  = useState(null);  // task whose log is open
   const [deleteTarget, setDeleteTarget] = useState(null);  // task pending delete confirmation
+  const [confirmDeleteEvent, setConfirmDeleteEvent] = useState(false);  // event delete confirmation
 
   // Event modal state (calendar)
   const [eventForm,   setEventForm]   = useState(BLANK_EVENT);
@@ -732,6 +733,7 @@ export default function TaskTracker() {
     setModalDragState(null);
     setEventTarget(null); setEventForm(BLANK_EVENT); setEventError(""); setEventSaving(false);
     setEventAiPrompt(""); setEventAiError(""); setEventAiLoading(false);
+    setConfirmDeleteEvent(false);
   }
 
   // ── AI auto-fill ──
@@ -2786,7 +2788,7 @@ export default function TaskTracker() {
             {eventTarget && (
               <button type="button"
                 style={{ ...dyn.secondaryBtn, width: "100%", marginTop: "10px", color: "#ff4444", borderColor: "#ff444455" }}
-                onClick={handleDeleteEvent}>
+                onClick={() => setConfirmDeleteEvent(true)}>
                 DELETE EVENT
               </button>
             )}
@@ -2853,6 +2855,27 @@ export default function TaskTracker() {
               <button
                 style={{ ...dyn.primaryBtn, background:"#ff4444" }}
                 onClick={() => handleDelete(deleteTarget.id)}>
+                DELETE
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirmDeleteEvent && eventTarget && (
+        <div style={base.modal} onClick={() => setConfirmDeleteEvent(false)}>
+          <div style={base.modalBox} onClick={e => e.stopPropagation()}>
+            <h2 style={{ fontFamily: G.fontDisplay, fontSize:"16px", fontWeight:900, margin:"0 0 8px", color: G.text }}>
+              Delete event?
+            </h2>
+            <p style={{ fontSize:"13px", color: G.muted, lineHeight:1.5, margin:"0 0 20px" }}>
+              "{eventTarget.title}" will be permanently deleted. This can't be undone.
+            </p>
+            <div style={{ display:"flex", gap:"10px" }}>
+              <button style={dyn.secondaryBtn} onClick={() => setConfirmDeleteEvent(false)}>Cancel</button>
+              <button
+                style={{ ...dyn.primaryBtn, background:"#ff4444" }}
+                onClick={handleDeleteEvent}>
                 DELETE
               </button>
             </div>
@@ -3353,11 +3376,17 @@ function Calendar({ tasks, events, G, dyn, base, onTaskClick, onAddTaskOnDate, o
           </div>
           <div style={{ ...metaStyle, alignItems: "center" }}>
             <span style={isResolved ? { ...dyn.catTag(t.category), color: G.muted, background: `${G.muted}1f` } : dyn.catTag(t.category)}>{t.category}</span>
-            {showDue && t.due_date && (
-              <span style={{ color: overdue ? "#ff4444" : G.muted, fontWeight: overdue ? 700 : 400 }}>
-                {overdue ? "OVERDUE" : "DUE"} {new Date(t.due_date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-              </span>
-            )}
+            {isResolved
+              ? t.resolved_at && (
+                  <span style={{ color: G.muted }}>
+                    DONE {new Date(t.resolved_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                  </span>
+                )
+              : showDue && t.due_date && (
+                  <span style={{ color: overdue ? "#ff4444" : G.muted, fontWeight: overdue ? 700 : 400 }}>
+                    {overdue ? "OVERDUE" : "DUE"} {new Date(t.due_date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                  </span>
+                )}
           </div>
         </div>
       </div>

@@ -111,6 +111,8 @@ Typography: `font` is the body stack (`Inter`, sans-serif) and `fontDisplay` is 
 - Event CRUD helpers live in `src/lib/supabase.js`: `fetchEvents/addEvent/updateEvent/deleteEvent`, mirroring the task CRUD helpers (`fetchTasks/addTask/updateTask/deleteTask`) that live at the top of `src/App.jsx`.
 - `events` is added to the `supabase_realtime` publication and subscribed alongside `tasks` in the main `useEffect`.
 - Event add/edit modal: `modalMode === "event"` with `eventForm`/`eventTarget`/`eventError`/`eventSaving` state, `BLANK_EVENT` constant, `openAddEvent(dateStr)`/`openEditEvent(ev)`/`handleSaveEvent()`/`handleDeleteEvent()`. `openAddOnDate(dateStr)` is the add-task variant that pre-fills `due_date`.
+- **Delete confirmation:** the "DELETE EVENT" button does NOT delete directly — it sets `confirmDeleteEvent` which renders a confirmation modal (mirrors the task `deleteTarget` modal) layered over the event modal; only its DELETE button calls `handleDeleteEvent()`. `confirmDeleteEvent` is reset in `closeModal()`.
+- **Resolved task rows in the calendar** (`renderTask`) show a `DONE <resolved_at>` line (muted) instead of the active `DUE/OVERDUE <due_date>` line.
 - **AI Auto-Fill for events:** the event modal (new events only) has an AI box mirroring the task one — `eventAiPrompt`/`eventAiLoading`/`eventAiError` state + `handleEventAiFill()`. It calls `aiAutoFill(prompt, "event")`; the shared `ai-autofill` edge function branches on a `mode` body param (`"task"` default | `"event"`) to pick `taskSystem` vs `eventSystem` and returns event-shaped JSON (`title, event_date, all_day, start_time, end_time, category, location, notes, recurrence`).
 
 ## supabase.js Fallback Fix
