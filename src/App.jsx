@@ -3349,10 +3349,10 @@ function Calendar({ tasks, events, G, dyn, base, onTaskClick, onAddTaskOnDate, o
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
             <span style={titleStyle}>{t.title}</span>
-            <span style={dyn.chip(s?.color || G.muted)}>{(s?.label) || t.status.toUpperCase()}</span>
+            <span style={dyn.chip(isResolved ? G.muted : (s?.color || G.muted))}>{(s?.label) || t.status.toUpperCase()}</span>
           </div>
           <div style={{ ...metaStyle, alignItems: "center" }}>
-            <span style={dyn.catTag(t.category)}>{t.category}</span>
+            <span style={isResolved ? { ...dyn.catTag(t.category), color: G.muted, background: `${G.muted}1f` } : dyn.catTag(t.category)}>{t.category}</span>
             {showDue && t.due_date && (
               <span style={{ color: overdue ? "#ff4444" : G.muted, fontWeight: overdue ? 700 : 400 }}>
                 {overdue ? "OVERDUE" : "DUE"} {new Date(t.due_date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}
